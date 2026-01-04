@@ -1,0 +1,22 @@
+# Flutter
+flutter/.dart_tool/
+flutter/.fvm/
+flutter/build/
+flutter/.metadata
+flutter/*.iml
+flutter/.idea/
+
+# Pebble
+pebble/build/
+pebble/.lock-waf_*
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log

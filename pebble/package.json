@@ -1,0 +1,37 @@
+{
+  "name": "borge-companion",
+  "author": "lesserevil",
+  "version": "0.1.0",
+  "keywords": ["pebble-app", "sheet-music", "navigation"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Borge",
+    "uuid": "061a3443-ee37-4939-93fd-02f25cfb2b3d",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "KEY_COMMAND",
+      "KEY_SONG_ID",
+      "KEY_SONG_NAME",
+      "KEY_PAGE_NUM",
+      "KEY_PAGE_COUNT",
+      "KEY_SONG_COUNT",
+      "KEY_SONG_INDEX"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

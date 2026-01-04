@@ -1,6 +1,10 @@
 # Borge - Sheet Music Viewer with Pebble Control
 
+[![Flutter CI](https://github.com/lesserevil/borge/actions/workflows/flutter.yml/badge.svg)](https://github.com/lesserevil/borge/actions/workflows/flutter.yml)
+
 A cross-platform Flutter application for viewing sheet music on tablets, with companion Pebble watch app for hands-free navigation.
+
+**Flutter Version**: 3.38.5 (managed via [fvm](https://fvm.app/))
 
 ## Features
 
@@ -14,7 +18,7 @@ A cross-platform Flutter application for viewing sheet music on tablets, with co
 
 ### Prerequisites
 
-- Flutter SDK (see version in `pubspec.yaml`)
+- [fvm](https://fvm.app/) - Flutter Version Manager (recommended)
 - Android Studio or VS Code with Flutter extensions
 - Pebble SDK for companion app development
 - Git for version control
@@ -23,32 +27,69 @@ A cross-platform Flutter application for viewing sheet music on tablets, with co
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd borge
+git clone git@github.com:lesserevil/borge.git
+cd borge/flutter
+
+# Install fvm (if not already installed)
+curl -fsSL https://fvm.app/install.sh | bash
+
+# Install the pinned Flutter version
+fvm install
 
 # Install Flutter dependencies
-flutter pub get
+fvm flutter pub get
 
 # Run the app
-flutter run
+fvm flutter run
 ```
+
+> **Note**: You can also use `flutter` directly if you have Flutter 3.38.5 installed globally, but fvm is recommended for consistent versioning.
 
 ### Pebble App Setup
 
-1. Install the Pebble SDK from [developer.getpebble.com](https://developer.getpebble.com/)
-2. Navigate to the `pebble/` directory
-3. Build and install the companion app:
-   ```bash
-   pebble build
-   pebble install --phone <device-id>
-   ```
+See [pebble/README.md](pebble/README.md) for detailed setup instructions.
+
+**Quick Start (Ubuntu)**:
+
+```bash
+# Install system dependencies
+sudo apt install python3-pip python3-venv python3.12-venv nodejs npm libsdl1.2debian libfdt1
+
+# Install uv (Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install pebble-tool and SDK
+uv tool install pebble-tool --python 3.12
+pebble sdk install latest
+
+# Build and install
+cd pebble
+pebble build
+pebble install --phone <IP>  # IP from Pebble app on phone
+```
 
 ## Architecture
+
+### Project Structure
+
+```
+borge/
+├── flutter/          # Flutter app
+│   ├── lib/          # Dart source code
+│   ├── android/      # Android platform files
+│   ├── ios/          # iOS platform files
+│   ├── web/          # Web platform files
+│   ├── linux/        # Linux platform files
+│   ├── macos/        # macOS platform files
+│   ├── windows/      # Windows platform files
+│   └── test/         # Flutter tests
+└── pebble/           # Pebble companion app (coming soon)
+```
 
 ### Flutter App Structure
 
 ```
-lib/
+flutter/lib/
 ├── models/           # Data models (Song, Page, SheetMusicFile)
 ├── services/         # Business logic (FileScanner, SongRepository, ApiService)
 ├── screens/          # UI screens
@@ -66,11 +107,13 @@ lib/
 ## Testing
 
 ```bash
+cd flutter
+
 # Run all tests
-flutter test
+fvm flutter test
 
 # Run with coverage
-flutter test --coverage
+fvm flutter test --coverage
 ```
 
 ## CI/CD
