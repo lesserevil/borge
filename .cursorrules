@@ -1,0 +1,19 @@
+Always read the 'AGENTS.md' file at the start of the session to understand the project workflow and conventions.
+
+When creating or updating tasks in 'beads' (bd), ensure they are VERY detailed. 
+Each task MUST include:
+1. **Objective**: A clear statement of what needs to be achieved.
+2. **Context/Why**: The reasoning behind the task and its value.
+3. **Implementation Plan**: Step-by-step instructions on how to execute the task.
+4. **Acceptance Criteria**: Specific conditions that must be met to close the task.
+5. **Technical Details**: Mentions of specific files, schemas, libraries, or architectural patterns involved.
+
+Avoid vague tasks like "Fix bugs" or "Add feature". Be specific.
+
+**Technical Note**: When passing long, multi-line descriptions to the `bd` command in the shell, ALWAYS use command substitution with a heredoc to ensure newlines and formatting are preserved correctly.
+Example:
+bd update <id> --description "$(cat <<EOF
+Line 1
+Line 2
+EOF
+)"
