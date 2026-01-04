@@ -20,3 +20,7 @@ Thumbs.db
 
 # Misc
 *.log
+flutter/.flutter-plugins-dependencies
+__pycache__/
+*.pyc
+tools/.venv/
