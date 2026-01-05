@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'screens/screens.dart';
 import 'state/state.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const BorgeApp());
 }
 
@@ -17,6 +19,26 @@ class BorgeApp extends StatefulWidget {
 
 class _BorgeAppState extends State<BorgeApp> {
   final AppState _appState = AppState();
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    if (kIsWeb) {
+      // On web, just load demo songs from assets
+      await _appState.loadDemoSongs();
+    } else {
+      // On native platforms, initialize the music library
+      await _appState.initialize();
+    }
+    setState(() {
+      _initialized = true;
+    });
+  }
 
   @override
   void dispose() {
@@ -43,7 +65,43 @@ class _BorgeAppState extends State<BorgeApp> {
         ),
         useMaterial3: true,
       ),
-      home: SongListScreen(appState: _appState),
+      home: _initialized
+          ? SongListScreen(appState: _appState)
+          : const _SplashScreen(),
+    );
+  }
+}
+
+/// Splash screen shown while the app initializes.
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.music_note,
+              size: 64,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 24),
+            Text('Borge', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 8),
+            Text(
+              'Sheet Music Viewer',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 32),
+            const CircularProgressIndicator(),
+          ],
+        ),
+      ),
     );
   }
 }

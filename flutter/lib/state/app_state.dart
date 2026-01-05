@@ -2,13 +2,24 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/models.dart';
+import '../services/music_library_service.dart';
 
 /// Application state for managing songs and current playback.
 class AppState extends ChangeNotifier {
   List<Song> _songs = [];
+  List<Song> _assetSongs = [];
+  List<Song> _librarySongs = [];
   Song? _currentSong;
   int _currentPageIndex = 0;
   bool _isLoading = false;
+
+  final MusicLibraryService _musicLibrary = MusicLibraryService();
+
+  /// The music library service for managing folders.
+  MusicLibraryService get musicLibrary => _musicLibrary;
+
+  /// List of registered music folders.
+  List<String> get musicFolders => _musicLibrary.folders;
 
   /// All available songs.
   List<Song> get songs => List.unmodifiable(_songs);
@@ -25,7 +36,8 @@ class AppState extends ChangeNotifier {
   /// Current page object.
   Page? get currentPage {
     if (_currentSong == null || _currentSong!.pages.isEmpty) return null;
-    if (_currentPageIndex < 0 || _currentPageIndex >= _currentSong!.pages.length) {
+    if (_currentPageIndex < 0 ||
+        _currentPageIndex >= _currentSong!.pages.length) {
       return null;
     }
     return _currentSong!.pages[_currentPageIndex];
@@ -42,7 +54,8 @@ class AppState extends ChangeNotifier {
 
   /// Whether we can go to the next page.
   bool get canGoNext =>
-      _currentSong != null && _currentPageIndex < _currentSong!.pages.length - 1;
+      _currentSong != null &&
+      _currentPageIndex < _currentSong!.pages.length - 1;
 
   /// Load songs from a list.
   void loadSongs(List<Song> songs) {
@@ -88,13 +101,47 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Load songs from assets.
+  /// Initialize the app state.
+  Future<void> initialize() async {
+    await _musicLibrary.initialize();
+    await loadAllSongs();
+  }
+
+  /// Load songs from all sources (assets + library folders).
+  Future<void> loadAllSongs() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      // Load from assets
+      _assetSongs = await _loadSongsFromAssets();
+      debugPrint('Loaded ${_assetSongs.length} songs from assets');
+
+      // Load from library folders (if on a platform that supports it)
+      if (!kIsWeb) {
+        _librarySongs = await _musicLibrary.scanFolders();
+        debugPrint('Loaded ${_librarySongs.length} songs from library folders');
+      }
+
+      // Combine and deduplicate by name
+      _songs = _combineSongs(_assetSongs, _librarySongs);
+    } catch (e) {
+      debugPrint('Error loading songs: $e');
+      _songs = [];
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  /// Load songs from assets only (for demo/web).
   Future<void> loadDemoSongs() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      _songs = await _loadSongsFromAssets();
+      _assetSongs = await _loadSongsFromAssets();
+      _songs = _assetSongs;
     } catch (e) {
       debugPrint('Error loading songs from assets: $e');
       _songs = [];
@@ -102,6 +149,66 @@ class AppState extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Rescan library folders for new songs.
+  Future<void> rescanLibrary() async {
+    if (kIsWeb) return;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _librarySongs = await _musicLibrary.scanFolders();
+      _songs = _combineSongs(_assetSongs, _librarySongs);
+    } catch (e) {
+      debugPrint('Error rescanning library: $e');
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  /// Add a music folder and rescan.
+  Future<String?> addMusicFolder() async {
+    final path = await _musicLibrary.pickAndAddFolder();
+    if (path != null) {
+      await rescanLibrary();
+    }
+    return path;
+  }
+
+  /// Remove a music folder and rescan.
+  Future<void> removeMusicFolder(String path) async {
+    await _musicLibrary.removeFolder(path);
+    await rescanLibrary();
+  }
+
+  /// Request storage permission.
+  Future<bool> requestStoragePermission() async {
+    return await _musicLibrary.requestPermission();
+  }
+
+  /// Check if storage permission is granted.
+  bool get hasStoragePermission => _musicLibrary.hasPermission;
+
+  /// Combine songs from multiple sources, preferring library over assets.
+  List<Song> _combineSongs(List<Song> assets, List<Song> library) {
+    final combined = <String, Song>{};
+
+    // Add asset songs first
+    for (final song in assets) {
+      combined[song.name.toLowerCase()] = song;
+    }
+
+    // Library songs override assets with same name
+    for (final song in library) {
+      combined[song.name.toLowerCase()] = song;
+    }
+
+    final result = combined.values.toList();
+    result.sort((a, b) => a.name.compareTo(b.name));
+    return result;
   }
 
   /// Load songs from the assets/music directory.
@@ -133,7 +240,9 @@ class AppState extends ChangeNotifier {
         // e.g., "assets/music/FurElise.musicxml" -> "FurElise"
         final parts = asset.split('/');
         if (parts.length >= 3) {
-          final songDir = parts.length > 3 ? parts[2] : _getFileBaseName(parts[2]);
+          final songDir = parts.length > 3
+              ? parts[2]
+              : _getFileBaseName(parts[2]);
           songFiles.putIfAbsent(songDir, () => []).add(asset);
         }
       }
@@ -147,19 +256,17 @@ class AppState extends ChangeNotifier {
         for (var i = 0; i < files.length; i++) {
           final filePath = files[i];
           final ext = _getFileExtension(filePath);
-          pages.add(Page(
-            pageNumber: i + 1,
-            path: filePath,
-            extension: ext,
-          ));
+          pages.add(Page(pageNumber: i + 1, path: filePath, extension: ext));
         }
 
         if (pages.isNotEmpty) {
-          songs.add(Song(
-            id: songName.hashCode.toRadixString(16),
-            name: _formatSongName(songName),
-            pages: pages,
-          ));
+          songs.add(
+            Song(
+              id: songName.hashCode.toRadixString(16),
+              name: _formatSongName(songName),
+              pages: pages,
+            ),
+          );
         }
       }
 
@@ -192,13 +299,16 @@ class AppState extends ChangeNotifier {
   String _formatSongName(String name) {
     // Replace underscores and hyphens with spaces
     var formatted = name.replaceAll('_', ' ').replaceAll('-', ' ');
-    
+
     // Capitalize first letter of each word
-    formatted = formatted.split(' ').map((word) {
-      if (word.isEmpty) return word;
-      return word[0].toUpperCase() + word.substring(1);
-    }).join(' ');
-    
+    formatted = formatted
+        .split(' ')
+        .map((word) {
+          if (word.isEmpty) return word;
+          return word[0].toUpperCase() + word.substring(1);
+        })
+        .join(' ');
+
     return formatted;
   }
 }

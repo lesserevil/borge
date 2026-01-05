@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:music_xml/music_xml.dart';
 
-/// Widget that renders MusicXML content as sheet music.
+/// Legacy widget that renders MusicXML content as sheet music using CustomPaint.
+///
+/// **Note:** This renderer provides basic notation rendering but has limitations.
+/// For production use, prefer [MusicXmlWebRenderer] which uses OpenSheetMusicDisplay
+/// for professional-quality engraving.
+///
+/// This renderer is kept as a fallback for platforms where WebView is unavailable
+/// (e.g., Flutter Web) or for cases where a lightweight, offline renderer is needed.
 class MusicXmlRenderer extends StatelessWidget {
   /// The parsed MusicXML document.
   final MusicXmlDocument document;
@@ -54,10 +61,7 @@ class _MusicXmlPainter extends CustomPainter {
   static const double measureMinWidth = 150.0;
   static const double noteSpacing = 40.0;
 
-  _MusicXmlPainter({
-    required this.document,
-    required this.foregroundColor,
-  });
+  _MusicXmlPainter({required this.document, required this.foregroundColor});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -104,14 +108,28 @@ class _MusicXmlPainter extends CustomPainter {
       double measureX = staffMarginLeft + 80;
       for (final measure in part.measures) {
         final measureWidth = _calculateMeasureWidth(measure, staffWidth - 80);
-        _drawMeasure(canvas, measure, measureX, currentY, measureWidth, paint, fillPaint);
+        _drawMeasure(
+          canvas,
+          measure,
+          measureX,
+          currentY,
+          measureWidth,
+          paint,
+          fillPaint,
+        );
         measureX += measureWidth;
 
         // Wrap to next line if needed
         if (measureX > size.width - staffMarginRight - measureMinWidth) {
           currentY += staffSpacing;
           if (currentY < size.height - staffHeight) {
-            _drawStaffLines(canvas, staffMarginLeft, currentY, staffWidth, paint);
+            _drawStaffLines(
+              canvas,
+              staffMarginLeft,
+              currentY,
+              staffWidth,
+              paint,
+            );
           }
           measureX = staffMarginLeft + 20;
         }
@@ -137,18 +155,23 @@ class _MusicXmlPainter extends CustomPainter {
 
   double _calculateMeasureWidth(Measure measure, double maxWidth) {
     final noteCount = measure.notes.length;
-    final width = (noteCount * noteSpacing).clamp(measureMinWidth, maxWidth / 2);
+    final width = (noteCount * noteSpacing).clamp(
+      measureMinWidth,
+      maxWidth / 2,
+    );
     return width;
   }
 
-  void _drawStaffLines(Canvas canvas, double x, double y, double width, Paint paint) {
+  void _drawStaffLines(
+    Canvas canvas,
+    double x,
+    double y,
+    double width,
+    Paint paint,
+  ) {
     for (int i = 0; i < 5; i++) {
       final lineY = y + (i * staffLineSpacing);
-      canvas.drawLine(
-        Offset(x, lineY),
-        Offset(x + width, lineY),
-        paint,
-      );
+      canvas.drawLine(Offset(x, lineY), Offset(x + width, lineY), paint);
     }
   }
 
@@ -157,11 +180,7 @@ class _MusicXmlPainter extends CustomPainter {
     final textPainter = TextPainter(
       text: TextSpan(
         text: '𝄞',
-        style: TextStyle(
-          fontSize: 60,
-          color: paint.color,
-          fontFamily: 'serif',
-        ),
+        style: TextStyle(fontSize: 60, color: paint.color, fontFamily: 'serif'),
       ),
       textDirection: TextDirection.ltr,
     );
@@ -332,26 +351,24 @@ class _MusicXmlPainter extends CustomPainter {
     return staffY + staffHeight - yOffset;
   }
 
-  void _drawLedgerLines(Canvas canvas, double x, double y, double noteY, Paint paint) {
+  void _drawLedgerLines(
+    Canvas canvas,
+    double x,
+    double y,
+    double noteY,
+    Paint paint,
+  ) {
     // Draw ledger lines above staff
     double ledgerY = y - staffLineSpacing;
     while (ledgerY >= noteY - staffLineSpacing / 2) {
-      canvas.drawLine(
-        Offset(x - 10, ledgerY),
-        Offset(x + 10, ledgerY),
-        paint,
-      );
+      canvas.drawLine(Offset(x - 10, ledgerY), Offset(x + 10, ledgerY), paint);
       ledgerY -= staffLineSpacing;
     }
 
     // Draw ledger lines below staff
     ledgerY = y + staffHeight + staffLineSpacing;
     while (ledgerY <= noteY + staffLineSpacing / 2) {
-      canvas.drawLine(
-        Offset(x - 10, ledgerY),
-        Offset(x + 10, ledgerY),
-        paint,
-      );
+      canvas.drawLine(Offset(x - 10, ledgerY), Offset(x + 10, ledgerY), paint);
       ledgerY += staffLineSpacing;
     }
   }
@@ -359,7 +376,10 @@ class _MusicXmlPainter extends CustomPainter {
   bool _isFilledNoteHead(Note note) {
     // Quarter notes (1/4) and shorter have filled heads
     final type = note.noteDuration.type.toLowerCase();
-    return type == 'quarter' || type == 'eighth' || type == '16th' || type == '32nd';
+    return type == 'quarter' ||
+        type == 'eighth' ||
+        type == '16th' ||
+        type == '32nd';
   }
 
   bool _isWholeNote(Note note) {

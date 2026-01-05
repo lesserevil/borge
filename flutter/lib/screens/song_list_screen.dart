@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../state/app_state.dart';
+import 'settings_screen.dart';
 import 'sheet_music_viewer_screen.dart';
 
 /// Screen displaying a list of available songs.
@@ -19,8 +21,13 @@ class SongListScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Scan for music',
-            onPressed: () => _scanForMusic(context),
+            tooltip: 'Rescan for music',
+            onPressed: () => _rescanMusic(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
+            onPressed: () => _openSettings(context),
           ),
         ],
       ),
@@ -59,8 +66,8 @@ class SongListScreen extends StatelessWidget {
                   Text(
                     'Tap the refresh button to scan for music',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
@@ -88,13 +95,24 @@ class SongListScreen extends StatelessWidget {
     );
   }
 
-  void _scanForMusic(BuildContext context) {
-    // For now, just load demo songs since we're in browser
-    _loadDemoSongs(context);
+  void _rescanMusic(BuildContext context) {
+    if (kIsWeb) {
+      appState.loadDemoSongs();
+    } else {
+      appState.loadAllSongs();
+    }
   }
 
   void _loadDemoSongs(BuildContext context) {
     appState.loadDemoSongs();
+  }
+
+  void _openSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SettingsScreen(appState: appState),
+      ),
+    );
   }
 
   void _openSong(BuildContext context, Song song) {
@@ -112,10 +130,7 @@ class _SongListTile extends StatelessWidget {
   final Song song;
   final VoidCallback onTap;
 
-  const _SongListTile({
-    required this.song,
-    required this.onTap,
-  });
+  const _SongListTile({required this.song, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -132,15 +147,12 @@ class _SongListTile extends StatelessWidget {
           color: Theme.of(context).colorScheme.onPrimaryContainer,
         ),
       ),
-      title: Text(
-        song.name,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
+      title: Text(song.name, style: Theme.of(context).textTheme.titleMedium),
       subtitle: Text(
         '${song.pageCount} ${song.pageCount == 1 ? 'page' : 'pages'}',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
+          color: Theme.of(context).colorScheme.outline,
+        ),
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,

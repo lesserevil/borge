@@ -4,12 +4,11 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:music_xml/music_xml.dart';
 import 'package:pdfx/pdfx.dart';
 
 import '../models/models.dart' as models;
 import '../state/app_state.dart';
-import '../widgets/musicxml_renderer.dart';
+import '../widgets/musicxml_platform_renderer.dart';
 
 /// Screen for viewing sheet music pages with navigation.
 class SheetMusicViewerScreen extends StatefulWidget {
@@ -176,10 +175,7 @@ class _SheetMusicPage extends StatefulWidget {
   final models.Page page;
   final String songName;
 
-  const _SheetMusicPage({
-    required this.page,
-    required this.songName,
-  });
+  const _SheetMusicPage({required this.page, required this.songName});
 
   @override
   State<_SheetMusicPage> createState() => _SheetMusicPageState();
@@ -187,7 +183,7 @@ class _SheetMusicPage extends StatefulWidget {
 
 class _SheetMusicPageState extends State<_SheetMusicPage> {
   PdfControllerPinch? _pdfController;
-  MusicXmlDocument? _musicXmlDocument;
+  String? _musicXmlContent;
   bool _isLoading = true;
   String? _error;
 
@@ -215,7 +211,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
   void _disposeControllers() {
     _pdfController?.dispose();
     _pdfController = null;
-    _musicXmlDocument = null;
+    _musicXmlContent = null;
   }
 
   Future<void> _loadPage() async {
@@ -253,7 +249,9 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
 
       if (path.startsWith('http://') || path.startsWith('https://')) {
         // Network MusicXML
-        final response = await NetworkAssetBundle(Uri.parse(path)).loadString(path);
+        final response = await NetworkAssetBundle(
+          Uri.parse(path),
+        ).loadString(path);
         xmlContent = response;
       } else if (path.startsWith('assets/')) {
         // Asset MusicXML
@@ -265,9 +263,8 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
         throw Exception('Cannot load local files on web');
       }
 
-      debugPrint('Parsing MusicXML content (${xmlContent.length} chars)...');
-      _musicXmlDocument = MusicXmlDocument.parse(xmlContent);
-      debugPrint('MusicXML parsed successfully: ${_musicXmlDocument!.parts.length} parts');
+      debugPrint('Loaded MusicXML content (${xmlContent.length} chars)');
+      _musicXmlContent = xmlContent;
 
       setState(() {
         _isLoading = false;
@@ -291,7 +288,9 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       if (path.startsWith('http://') || path.startsWith('https://')) {
         // Network PDF
         document = await PdfDocument.openData(
-          await NetworkAssetBundle(Uri.parse(path)).load(path).then((data) => data.buffer.asUint8List()),
+          await NetworkAssetBundle(
+            Uri.parse(path),
+          ).load(path).then((data) => data.buffer.asUint8List()),
         );
       } else if (path.startsWith('assets/')) {
         // Asset PDF
@@ -340,9 +339,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     if (_isLoading) {
       return const AspectRatio(
         aspectRatio: 8.5 / 11,
-        child: Center(
-          child: CircularProgressIndicator(),
-        ),
+        child: Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -374,24 +371,27 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       case '.xml':
         return _buildMusicXmlView();
       default:
-        return _buildPlaceholder(
-          error: 'Unsupported file type: $ext',
-        );
+        return _buildPlaceholder(error: 'Unsupported file type: $ext');
     }
   }
 
   Widget _buildMusicXmlView() {
-    if (_musicXmlDocument == null) {
-      return _buildPlaceholder(error: 'MusicXML document not loaded');
+    if (_musicXmlContent == null) {
+      return _buildPlaceholder(error: 'MusicXML content not loaded');
     }
 
-    return AspectRatio(
-      aspectRatio: 8.5 / 11,
-      child: MusicXmlRenderer(
-        document: _musicXmlDocument!,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-      ),
+    // Use platform-adaptive OSMD renderer for high-quality notation
+    // Automatically selects WebView (native) or iframe (web) implementation
+    return buildMusicXmlRenderer(
+      musicXml: _musicXmlContent!,
+      backgroundColor: Colors.white,
+      onLoaded: (info) {
+        debugPrint('MusicXML loaded: ${info.title} by ${info.composer}');
+        debugPrint('Parts: ${info.partCount}, Measures: ${info.measureCount}');
+      },
+      onError: (message, type) {
+        debugPrint('MusicXML render error ($type): $message');
+      },
     );
   }
 
@@ -406,12 +406,10 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
         controller: _pdfController!,
         builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
           options: const DefaultBuilderOptions(),
-          documentLoaderBuilder: (_) => const Center(
-            child: CircularProgressIndicator(),
-          ),
-          pageLoaderBuilder: (_) => const Center(
-            child: CircularProgressIndicator(),
-          ),
+          documentLoaderBuilder: (_) =>
+              const Center(child: CircularProgressIndicator()),
+          pageLoaderBuilder: (_) =>
+              const Center(child: CircularProgressIndicator()),
           errorBuilder: (_, error) => Center(
             child: Text(
               'Error loading PDF: $error',
@@ -430,15 +428,11 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       svgWidget = SvgPicture.network(
         path,
         fit: BoxFit.contain,
-        placeholderBuilder: (_) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        placeholderBuilder: (_) =>
+            const Center(child: CircularProgressIndicator()),
       );
     } else if (path.startsWith('assets/')) {
-      svgWidget = SvgPicture.asset(
-        path,
-        fit: BoxFit.contain,
-      );
+      svgWidget = SvgPicture.asset(path, fit: BoxFit.contain);
     } else if (!kIsWeb) {
       // Load SVG from file system (not available on web)
       return _buildSvgFromFile(path);
@@ -448,10 +442,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
 
     return AspectRatio(
       aspectRatio: 8.5 / 11,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: svgWidget,
-      ),
+      child: Padding(padding: const EdgeInsets.all(16), child: svgWidget),
     );
   }
 
@@ -467,16 +458,15 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
           );
         }
         if (snapshot.hasError) {
-          return _buildPlaceholder(error: 'Failed to load SVG: ${snapshot.error}');
+          return _buildPlaceholder(
+            error: 'Failed to load SVG: ${snapshot.error}',
+          );
         }
         return AspectRatio(
           aspectRatio: 8.5 / 11,
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: SvgPicture.string(
-              snapshot.data!,
-              fit: BoxFit.contain,
-            ),
+            child: SvgPicture.string(snapshot.data!, fit: BoxFit.contain),
           ),
         );
       },
@@ -496,7 +486,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
             child: CircularProgressIndicator(
               value: loadingProgress.expectedTotalBytes != null
                   ? loadingProgress.cumulativeBytesLoaded /
-                      loadingProgress.expectedTotalBytes!
+                        loadingProgress.expectedTotalBytes!
                   : null,
             ),
           );
@@ -539,10 +529,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
 
     return AspectRatio(
       aspectRatio: 8.5 / 11,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: imageWidget,
-      ),
+      child: Padding(padding: const EdgeInsets.all(16), child: imageWidget),
     );
   }
 
@@ -584,7 +571,11 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.info_outline, size: 16, color: Colors.orange[700]),
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.orange[700],
+                    ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
@@ -631,10 +622,7 @@ class _StaffLines extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: List.generate(
           5,
-          (index) => Container(
-            height: 1,
-            color: Colors.black87,
-          ),
+          (index) => Container(height: 1, color: Colors.black87),
         ),
       ),
     );
