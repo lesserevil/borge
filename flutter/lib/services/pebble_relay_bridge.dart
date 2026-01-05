@@ -4,12 +4,11 @@ import 'package:flutter/foundation.dart';
 
 import 'pebble_service.dart';
 import 'remote_control_service.dart';
-import 'song_repository.dart';
 
 /// Bridge that connects the PebbleService to the RemoteControlService.
 ///
 /// When the phone is in relay mode, this bridge:
-/// 1. Receives Pebble commands via WebSocket (from Pebble companion app)
+/// 1. Receives Pebble commands via WebSocket (from Pebble watch app)
 /// 2. Forwards them to the tablet via Nearby Connections
 ///
 /// This allows the Pebble watch to control a tablet while remaining
@@ -31,7 +30,7 @@ class PebbleRelayBridge {
   bool get isActive => _isActive;
 
   /// Whether the Pebble is connected
-  bool get isPebbleConnected => _pebbleService.isRunning;
+  bool get isPebbleConnected => _pebbleService.clientCount > 0;
 
   /// Whether a tablet viewer is connected
   bool get isViewerConnected => _remoteControlService.isConnected;
@@ -39,6 +38,9 @@ class PebbleRelayBridge {
   /// Activate the bridge - starts PebbleService and listens for commands
   Future<void> activate() async {
     if (_isActive) return;
+
+    // Set up the command callback to relay commands to tablet
+    _pebbleService.onCommandReceived = _onPebbleCommand;
 
     // Start the Pebble WebSocket server
     await _pebbleService.start();
@@ -61,54 +63,58 @@ class PebbleRelayBridge {
     await _pebbleConnectionSubscription?.cancel();
     _pebbleConnectionSubscription = null;
 
+    // Remove the command callback
+    _pebbleService.onCommandReceived = null;
+
     await _pebbleService.stop();
 
     _isActive = false;
     debugPrint('PebbleRelayBridge deactivated');
   }
 
-  /// Create a PebbleService that relays commands to the tablet
-  /// instead of controlling local state.
-  ///
-  /// This creates a modified PebbleService that intercepts commands
-  /// and forwards them via the RemoteControlService.
-  static PebbleService createRelayingPebbleService({
-    required RemoteControlService remoteControlService,
-    required SongRepository songRepository,
-  }) {
-    return _RelayingPebbleService(
-      songRepository: songRepository,
-      remoteControlService: remoteControlService,
-    );
+  /// Handle Pebble commands and relay them to the tablet
+  void _onPebbleCommand(PebbleCommand command, Map<String, dynamic> data) {
+    debugPrint('Relaying Pebble command: ${command.stringValue}');
+
+    if (!_remoteControlService.isConnected) {
+      debugPrint('Cannot relay: not connected to viewer');
+      return;
+    }
+
+    switch (command) {
+      case PebbleCommand.nextPage:
+        _remoteControlService.sendNextPage();
+        break;
+      case PebbleCommand.prevPage:
+        _remoteControlService.sendPreviousPage();
+        break;
+      case PebbleCommand.nextSong:
+        // TODO: Implement song navigation via remote control
+        debugPrint('NEXT_SONG not yet implemented for relay');
+        break;
+      case PebbleCommand.prevSong:
+        // TODO: Implement song navigation via remote control
+        debugPrint('PREV_SONG not yet implemented for relay');
+        break;
+      case PebbleCommand.selectSong:
+        final songId = data['songId'] as String?;
+        if (songId != null) {
+          // TODO: Implement song selection via remote control
+          debugPrint('SELECT_SONG not yet implemented for relay');
+        }
+        break;
+      case PebbleCommand.getList:
+        // TODO: Request song list from tablet and relay back to watch
+        debugPrint('GET_LIST not yet implemented for relay');
+        break;
+      default:
+        debugPrint('Unhandled command for relay: ${command.stringValue}');
+    }
   }
 
   void dispose() {
     deactivate();
   }
-}
-
-/// A PebbleService that relays commands to a remote viewer
-/// instead of controlling local state.
-class _RelayingPebbleService extends PebbleService {
-  final RemoteControlService _remoteControlService;
-
-  _RelayingPebbleService({
-    required SongRepository songRepository,
-    required RemoteControlService remoteControlService,
-  }) : _remoteControlService = remoteControlService,
-       super(songRepository: songRepository);
-
-  // Override command handlers to relay to remote viewer
-
-  // Note: The base PebbleService handles the WebSocket communication,
-  // but we intercept the actual command execution to forward to the tablet.
-  //
-  // For a full implementation, we would need to either:
-  // 1. Modify PebbleService to have overridable command handlers
-  // 2. Or use a callback pattern
-  //
-  // For now, we'll add a relay mode to the RemoteControlService
-  // that integrates directly with button-press events.
 }
 
 /// Extension on RemoteControlService to integrate with Pebble
