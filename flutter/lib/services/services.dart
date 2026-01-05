@@ -1,4 +1,5 @@
 export 'api_service.dart';
+export 'direct_ip_service.dart';
 export 'file_scanner_service.dart';
 export 'music_library_service.dart';
 export 'nearby_connections_service.dart';

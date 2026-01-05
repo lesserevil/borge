@@ -3,12 +3,11 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
-import '../services/nearby_connections_service.dart';
 import '../services/remote_control_service.dart';
 import '../state/app_state.dart';
 
 /// Settings screen for managing app configuration and music folders.
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   final AppState appState;
   final RemoteControlService? remoteControlService;
 
@@ -17,6 +16,24 @@ class SettingsScreen extends StatelessWidget {
     required this.appState,
     this.remoteControlService,
   });
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _ipController = TextEditingController();
+  final _portController = TextEditingController(text: '9876');
+
+  AppState get appState => widget.appState;
+  RemoteControlService? get remoteControlService => widget.remoteControlService;
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    _portController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -196,6 +213,10 @@ class SettingsScreen extends StatelessWidget {
       builder: (context, _) {
         return Column(
           children: [
+            // Connection type selection (when not enabled)
+            if (!service.isEnabled)
+              _buildConnectionTypeSelector(context, service),
+
             // Mode selection
             ListTile(
               leading: Icon(
@@ -250,16 +271,27 @@ class SettingsScreen extends StatelessWidget {
                   color: _getConnectionColor(service.connectionState),
                 ),
                 title: Text(_getConnectionStatusText(service)),
-                subtitle: service.isConnected
-                    ? Text(
-                        '${service.connectedEndpoints.length} device(s) connected',
-                      )
-                    : null,
+                subtitle: _buildConnectionSubtitle(service),
               ),
 
-              // Show discovered devices in relay mode
-              if (service.mode == RemoteControlMode.relay)
+              // Show IP address info in viewer mode with Direct IP
+              if (service.mode == RemoteControlMode.viewer &&
+                  service.connectionType == ConnectionType.directIp)
+                _buildViewerIpInfo(context, service),
+
+              // Show connect UI in relay mode with Direct IP
+              if (service.mode == RemoteControlMode.relay &&
+                  service.connectionType == ConnectionType.directIp &&
+                  !service.isConnected)
+                _buildRelayConnectUI(context, service),
+
+              // Show discovered devices in relay mode with Nearby
+              if (service.mode == RemoteControlMode.relay &&
+                  service.connectionType == ConnectionType.nearby)
                 ..._buildDiscoveredDevicesList(context, service),
+
+              // Show connected devices
+              if (service.isConnected) _buildConnectedDevices(context, service),
             ],
 
             // Error display
@@ -294,37 +326,241 @@ class SettingsScreen extends StatelessWidget {
               ),
 
             // Help text
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'How it works:',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Viewer Mode: Use on a tablet to display sheet music. '
-                        'The tablet will accept page turn commands from connected devices.',
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Relay Mode: Use on a phone to relay Pebble watch commands '
-                        'to a tablet running in Viewer mode.',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            _buildHelpCard(context, service),
           ],
         );
       },
     );
+  }
+
+  Widget _buildConnectionTypeSelector(
+    BuildContext context,
+    RemoteControlService service,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: SegmentedButton<ConnectionType>(
+        segments: const [
+          ButtonSegment(
+            value: ConnectionType.directIp,
+            label: Text('Direct IP'),
+            icon: Icon(Icons.lan),
+          ),
+          ButtonSegment(
+            value: ConnectionType.nearby,
+            label: Text('Nearby'),
+            icon: Icon(Icons.bluetooth),
+          ),
+        ],
+        selected: {service.connectionType},
+        onSelectionChanged: (selected) {
+          service.setConnectionType(selected.first);
+        },
+      ),
+    );
+  }
+
+  Widget _buildViewerIpInfo(
+    BuildContext context,
+    RemoteControlService service,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Card(
+        color: Theme.of(context).colorScheme.primaryContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Connect from relay device using:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (service.localIpAddresses.isEmpty)
+                const Text('No network interfaces found')
+              else
+                ...service.localIpAddresses.map(
+                  (ip) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.computer, size: 16),
+                        const SizedBox(width: 8),
+                        SelectableText(
+                          '$ip:${service.listeningPort}',
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 16,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRelayConnectUI(
+    BuildContext context,
+    RemoteControlService service,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Connect to Viewer',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: _ipController,
+                      decoration: const InputDecoration(
+                        labelText: 'IP Address',
+                        hintText: '192.168.1.100',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 1,
+                    child: TextField(
+                      controller: _portController,
+                      decoration: const InputDecoration(
+                        labelText: 'Port',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed:
+                      service.connectionState ==
+                          RemoteConnectionState.connecting
+                      ? null
+                      : () => _connectToViewerIp(context),
+                  icon:
+                      service.connectionState ==
+                          RemoteConnectionState.connecting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.link),
+                  label: Text(
+                    service.connectionState == RemoteConnectionState.connecting
+                        ? 'Connecting...'
+                        : 'Connect',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectedDevices(
+    BuildContext context,
+    RemoteControlService service,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Text(
+                'Connected Devices',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            if (service.connectionType == ConnectionType.nearby)
+              ...service.connectedEndpoints.map(
+                (endpoint) => ListTile(
+                  leading: const Icon(Icons.devices, color: Colors.green),
+                  title: Text(endpoint.name),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.link_off),
+                    onPressed: () => service.disconnectFromViewer(endpoint.id),
+                  ),
+                ),
+              )
+            else
+              ...service.ipConnectedEndpoints.map(
+                (endpoint) => ListTile(
+                  leading: const Icon(Icons.devices, color: Colors.green),
+                  title: Text(endpoint.name),
+                  subtitle: Text('${endpoint.address}:${endpoint.port}'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.link_off),
+                    onPressed: () {
+                      if (service.mode == RemoteControlMode.relay) {
+                        service.disconnectFromViewerIp();
+                      } else {
+                        service.disconnectFromViewer(endpoint.id);
+                      }
+                    },
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildConnectionSubtitle(RemoteControlService service) {
+    if (service.isConnected) {
+      final count = service.connectionType == ConnectionType.nearby
+          ? service.connectedEndpoints.length
+          : service.ipConnectedEndpoints.length;
+      return Text('$count device(s) connected');
+    }
+    return null;
   }
 
   List<Widget> _buildDiscoveredDevicesList(
@@ -343,7 +579,7 @@ class SettingsScreen extends StatelessWidget {
 
     return service.discoveredViewers.map((endpoint) {
       final isConnecting =
-          service.connectionState == NearbyConnectionState.connecting;
+          service.connectionState == RemoteConnectionState.connecting;
       final isConnected = service.connectedEndpoints.any(
         (e) => e.id == endpoint.id,
       );
@@ -374,60 +610,113 @@ class SettingsScreen extends StatelessWidget {
     }).toList();
   }
 
+  Widget _buildHelpCard(BuildContext context, RemoteControlService service) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'How it works:',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Viewer Mode: Use on a tablet to display sheet music. '
+                'The tablet will accept page turn commands from connected devices.',
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Relay Mode: Use on a phone to relay Pebble watch commands '
+                'to a tablet running in Viewer mode.',
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Connection types:',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Direct IP: Works on emulators and any network. '
+                'Enter the viewer\'s IP address manually.',
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Nearby: Uses Bluetooth/WiFi for automatic discovery. '
+                'Requires physical devices (not emulators).',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String _getModeDescription(RemoteControlService service) {
     if (!service.isEnabled) {
       return 'Control sheet music remotely via Pebble watch';
     }
+    final connectionTypeStr = service.connectionType == ConnectionType.directIp
+        ? 'Direct IP'
+        : 'Nearby';
     switch (service.mode) {
       case RemoteControlMode.standalone:
         return 'Disabled';
       case RemoteControlMode.viewer:
-        return 'Viewer mode - accepting remote commands';
+        return 'Viewer mode ($connectionTypeStr) - accepting remote commands';
       case RemoteControlMode.relay:
-        return 'Relay mode - forwarding Pebble commands';
+        return 'Relay mode ($connectionTypeStr) - forwarding Pebble commands';
     }
   }
 
-  IconData _getConnectionIcon(NearbyConnectionState state) {
+  IconData _getConnectionIcon(RemoteConnectionState state) {
     switch (state) {
-      case NearbyConnectionState.disconnected:
+      case RemoteConnectionState.disconnected:
         return Icons.wifi_off;
-      case NearbyConnectionState.advertising:
+      case RemoteConnectionState.advertising:
         return Icons.wifi_tethering;
-      case NearbyConnectionState.discovering:
+      case RemoteConnectionState.listening:
+        return Icons.hearing;
+      case RemoteConnectionState.discovering:
         return Icons.wifi_find;
-      case NearbyConnectionState.connecting:
+      case RemoteConnectionState.connecting:
         return Icons.sync;
-      case NearbyConnectionState.connected:
+      case RemoteConnectionState.connected:
         return Icons.wifi;
     }
   }
 
-  Color _getConnectionColor(NearbyConnectionState state) {
+  Color _getConnectionColor(RemoteConnectionState state) {
     switch (state) {
-      case NearbyConnectionState.disconnected:
+      case RemoteConnectionState.disconnected:
         return Colors.grey;
-      case NearbyConnectionState.advertising:
-      case NearbyConnectionState.discovering:
+      case RemoteConnectionState.advertising:
+      case RemoteConnectionState.listening:
+      case RemoteConnectionState.discovering:
         return Colors.orange;
-      case NearbyConnectionState.connecting:
+      case RemoteConnectionState.connecting:
         return Colors.blue;
-      case NearbyConnectionState.connected:
+      case RemoteConnectionState.connected:
         return Colors.green;
     }
   }
 
   String _getConnectionStatusText(RemoteControlService service) {
     switch (service.connectionState) {
-      case NearbyConnectionState.disconnected:
+      case RemoteConnectionState.disconnected:
         return 'Disconnected';
-      case NearbyConnectionState.advertising:
+      case RemoteConnectionState.advertising:
         return 'Advertising as "${service.deviceName}"';
-      case NearbyConnectionState.discovering:
+      case RemoteConnectionState.listening:
+        return 'Listening on port ${service.listeningPort}';
+      case RemoteConnectionState.discovering:
         return 'Searching for viewers...';
-      case NearbyConnectionState.connecting:
+      case RemoteConnectionState.connecting:
         return 'Connecting...';
-      case NearbyConnectionState.connected:
+      case RemoteConnectionState.connected:
         return 'Connected';
     }
   }
@@ -467,6 +756,30 @@ class SettingsScreen extends StatelessWidget {
     if (context.mounted && !success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to connect to viewer')),
+      );
+    }
+  }
+
+  Future<void> _connectToViewerIp(BuildContext context) async {
+    final service = remoteControlService!;
+    final ip = _ipController.text.trim();
+    final port = int.tryParse(_portController.text.trim()) ?? 9876;
+
+    if (ip.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter an IP address')),
+      );
+      return;
+    }
+
+    final success = await service.connectToViewerIp(host: ip, port: port);
+
+    if (context.mounted && !success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(service.lastError ?? 'Failed to connect to viewer'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
       );
     }
   }
