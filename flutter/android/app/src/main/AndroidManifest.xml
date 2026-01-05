@@ -12,6 +12,31 @@
     <!-- Internet permission for loading OSMD from CDN -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Nearby Connections permissions -->
+    <!-- Location permissions (required for Bluetooth/WiFi scanning) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    
+    <!-- Bluetooth permissions (for older Android versions) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" 
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" 
+        android:maxSdkVersion="30" />
+    
+    <!-- Bluetooth permissions (Android 12+, API 31+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" 
+        android:usesPermissionFlags="neverForLocation" />
+    
+    <!-- WiFi permissions for Nearby Connections -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    
+    <!-- WiFi permissions (Android 13+, API 33+) -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" 
+        android:usesPermissionFlags="neverForLocation" />
+
     <application
         android:requestLegacyExternalStorage="true"
         android:label="borge"

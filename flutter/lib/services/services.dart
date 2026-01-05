@@ -1,5 +1,9 @@
 export 'api_service.dart';
 export 'file_scanner_service.dart';
 export 'music_library_service.dart';
+export 'nearby_connections_service.dart';
+export 'pebble_relay_bridge.dart';
 export 'pebble_service.dart';
+export 'remote_command.dart';
+export 'remote_control_service.dart';
 export 'song_repository.dart';

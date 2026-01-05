@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../services/remote_control_service.dart';
 import '../state/app_state.dart';
 import 'settings_screen.dart';
 import 'sheet_music_viewer_screen.dart';
@@ -9,8 +10,13 @@ import 'sheet_music_viewer_screen.dart';
 /// Screen displaying a list of available songs.
 class SongListScreen extends StatelessWidget {
   final AppState appState;
+  final RemoteControlService? remoteControlService;
 
-  const SongListScreen({super.key, required this.appState});
+  const SongListScreen({
+    super.key,
+    required this.appState,
+    this.remoteControlService,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +116,10 @@ class SongListScreen extends StatelessWidget {
   void _openSettings(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => SettingsScreen(appState: appState),
+        builder: (context) => SettingsScreen(
+          appState: appState,
+          remoteControlService: remoteControlService,
+        ),
       ),
     );
   }

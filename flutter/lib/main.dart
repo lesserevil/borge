@@ -1,7 +1,10 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'screens/screens.dart';
+import 'services/remote_control_service.dart';
 import 'state/state.dart';
 
 void main() {
@@ -19,6 +22,7 @@ class BorgeApp extends StatefulWidget {
 
 class _BorgeAppState extends State<BorgeApp> {
   final AppState _appState = AppState();
+  RemoteControlService? _remoteControlService;
   bool _initialized = false;
 
   @override
@@ -34,6 +38,13 @@ class _BorgeAppState extends State<BorgeApp> {
     } else {
       // On native platforms, initialize the music library
       await _appState.initialize();
+
+      // Initialize remote control service on Android
+      if (Platform.isAndroid) {
+        _remoteControlService = RemoteControlService(appState: _appState);
+        // Set device name based on device model (could be customized in settings)
+        _remoteControlService!.setDeviceName('Borge Viewer');
+      }
     }
     setState(() {
       _initialized = true;
@@ -42,6 +53,7 @@ class _BorgeAppState extends State<BorgeApp> {
 
   @override
   void dispose() {
+    _remoteControlService?.dispose();
     _appState.dispose();
     super.dispose();
   }
@@ -66,7 +78,10 @@ class _BorgeAppState extends State<BorgeApp> {
         useMaterial3: true,
       ),
       home: _initialized
-          ? SongListScreen(appState: _appState)
+          ? SongListScreen(
+              appState: _appState,
+              remoteControlService: _remoteControlService,
+            )
           : const _SplashScreen(),
     );
   }

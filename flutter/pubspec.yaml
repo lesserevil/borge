@@ -62,6 +62,12 @@ dependencies:
   # Path provider for accessing app directories
   path_provider: ^2.1.2
 
+  # UUID generation for command IDs
+  uuid: ^4.4.0
+
+  # Nearby Connections for device-to-device communication
+  nearby_connections: ^4.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
