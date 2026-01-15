@@ -112,12 +112,12 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
               child: Stack(
                 children: [
                   // Sheet music display
-                  Center(
-                    child: _SheetMusicPage(
-                      page: page,
-                      songName: widget.appState.currentSong?.name ?? '',
-                    ),
+                SizedBox.expand(
+                  child: _SheetMusicPage(
+                    page: page,
+                    songName: widget.appState.currentSong?.name ?? "",
                   ),
+                ),
                   // Navigation overlay
                   _NavigationOverlay(
                     canGoPrevious: widget.appState.canGoPrevious,
