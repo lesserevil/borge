@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,6 +52,7 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
 
   Future<void> _loadHtmlTemplate() async {
     try {
+      // Load content for Mobile (or if we need string content)
       _htmlContent = await rootBundle.loadString('assets/html/verovio_template.html');
       if (Platform.isLinux) {
         await _initCefWebView();
@@ -111,8 +113,16 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
       // Wait for manager to be ready
       await cef.WebviewManager().ready;
       
-      // Initialize with blank page
-      await controller.initialize('about:blank');
+      // Prepare local files for WASM support
+      final tempDir = await getTemporaryDirectory();
+      final htmlFile = await _copyAssetToTemp('assets/html/verovio_template.html', 'verovio_template.html', tempDir);
+      await _copyAssetToTemp('assets/js/verovio-toolkit-wasm.js', 'verovio-toolkit-wasm.js', tempDir);
+
+      
+      debugPrint('Initializing Verovio with file: ${htmlFile.uri}');
+
+      // Initialize with local file URL
+      await controller.initialize(htmlFile.uri.toString());
 
       controller.setJavaScriptChannels({
         cef.JavascriptChannel(
@@ -120,10 +130,6 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
           onMessageReceived: (message) => _handleJsMessage(message.message),
         ),
       });
-
-      // Load content as data URL since loadHtmlString is missing
-      final String contentBase64 = base64Encode(const Utf8Encoder().convert(_htmlContent!));
-      await controller.loadUrl('data:text/html;base64,$contentBase64');
 
       setState(() {
         _cefController = controller;
@@ -145,6 +151,14 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<File> _copyAssetToTemp(String assetPath, String filename, Directory tempDir) async {
+    final ByteData data = await rootBundle.load(assetPath);
+    final List<int> bytes = data.buffer.asUint8List();
+    final File file = File('${tempDir.path}/$filename');
+    await file.writeAsBytes(bytes);
+    return file;
   }
 
   void _handleJsMessage(String message) {

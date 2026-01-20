@@ -54,7 +54,9 @@
     <div id="loading">Initialing Verovio...</div>
 
     <!-- Verovio Toolkit WASM -->
-    <script src="https://www.verovio.org/javascript/latest/verovio-toolkit-wasm.js" defer></script>
+    <!-- Verovio Toolkit WASM -->
+    <!-- When loaded via file://, this relative path works if the JS is in the same folder or properly relative -->
+    <script src="verovio-toolkit-wasm.js" defer></script>
 
     <script>
         let vrvToolkit = null;
@@ -63,6 +65,7 @@
 
         // Initialize Verovio
         window.addEventListener('load', () => {
+            // Handle WASM location for local loading
             if (typeof verovio !== 'undefined') {
                 verovio.module.onRuntimeInitialized = () => {
                     initToolkit();
