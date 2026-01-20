@@ -9,7 +9,7 @@
     <!-- For Android 13+ (API 33+) - granular media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <!-- Internet permission for loading OSMD from CDN -->
+    <!-- Internet permission for loading assets from CDN -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Nearby Connections permissions -->

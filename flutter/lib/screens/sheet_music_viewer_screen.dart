@@ -400,7 +400,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       return _buildPlaceholder(error: 'MusicXML content not loaded');
     }
 
-    // Use platform-adaptive OSMD renderer for high-quality notation
+    // Use platform-adaptive Verovio renderer for high-quality notation
     // Automatically selects WebView (native) or iframe (web) implementation
     return buildMusicXmlRenderer(
       musicXml: _musicXmlContent!,

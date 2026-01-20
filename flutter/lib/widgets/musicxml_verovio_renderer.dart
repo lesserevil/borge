@@ -1,13 +1,23 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'dart:io' show Platform, File, Directory;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+// Conditionally import libraries to avoid compilation errors on incorrect platforms
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:path_provider/path_provider.dart';
+
+// ignore: uri_does_not_exist
 import 'package:webview_cef/webview_cef.dart' as cef;
 
-import 'musicxml_web_renderer.dart';
+// Web-specific imports (stubbed on other platforms if needed, but we use conditional imports or kIsWeb check)
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:ui_web' as ui_web;
+
+import 'musicxml_types.dart';
 
 /// A MusicXML renderer that uses Verovio (WASM) for high-quality, reflowable engraving.
 class MusicXmlVerovioRenderer extends StatefulWidget {
@@ -33,11 +43,15 @@ class MusicXmlVerovioRenderer extends StatefulWidget {
 }
 
 class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
-  // webview_flutter members
+  // webview_flutter members (Mobile)
   WebViewController? _controller;
   
-  // webview_cef members
+  // webview_cef members (Linux)
   cef.WebViewController? _cefController;
+
+  // IFrame member (Web)
+  html.IFrameElement? _iframe;
+  String? _viewType;
   
   bool _isLoading = true;
   String? _error;
@@ -47,16 +61,57 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
   @override
   void initState() {
     super.initState();
-    _loadHtmlTemplate();
+    if (kIsWeb) {
+      _initWebIframe();
+    } else {
+      _loadHtmlTemplate();
+    }
+  }
+
+  @override
+  void didUpdateWidget(MusicXmlVerovioRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.musicXml != widget.musicXml) {
+       _loadContent();
+    }
+  }
+
+  void _initWebIframe() {
+    final frameId = 'verovio-frame-${DateTime.now().millisecondsSinceEpoch}';
+    _viewType = 'verovio-iframe-$frameId';
+
+    _iframe = html.IFrameElement()
+      ..src = 'assets/assets/html/verovio_template.html'
+      ..style.border = 'none'
+      ..style.width = '100%'
+      ..style.height = '100%';
+
+    // Register view factory
+    // ignore: undefined_prefixed_name
+    ui_web.platformViewRegistry.registerViewFactory(
+      _viewType!,
+      (int viewId) => _iframe!,
+    );
+
+    // Initial listener
+    html.window.onMessage.listen((event) {
+      // Basic security check: ensure data is what we expect
+      if (event.data is String) {
+        _handleJsMessage(event.data);
+      }
+    });
+
+    setState(() {
+      _isLoading = false; 
+    });
   }
 
   Future<void> _loadHtmlTemplate() async {
     try {
-      // Load content for Mobile (or if we need string content)
-      _htmlContent = await rootBundle.loadString('assets/html/verovio_template.html');
       if (Platform.isLinux) {
         await _initCefWebView();
       } else {
+        _htmlContent = await rootBundle.loadString('assets/html/verovio_template.html');
         _initMobileWebView();
       }
     } catch (e, stackTrace) {
@@ -109,19 +164,13 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
   Future<void> _initCefWebView() async {
     try {
       final controller = cef.WebviewManager().createWebView();
-      
-      // Wait for manager to be ready
       await cef.WebviewManager().ready;
       
-      // Prepare local files for WASM support
       final tempDir = await getTemporaryDirectory();
       final htmlFile = await _copyAssetToTemp('assets/html/verovio_template.html', 'verovio_template.html', tempDir);
       await _copyAssetToTemp('assets/js/verovio-toolkit-wasm.js', 'verovio-toolkit-wasm.js', tempDir);
-
       
       debugPrint('Initializing Verovio with file: ${htmlFile.uri}');
-
-      // Initialize with local file URL
       await controller.initialize(htmlFile.uri.toString());
 
       controller.setJavaScriptChannels({
@@ -135,13 +184,10 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
         _cefController = controller;
       });
 
-      // Give it a moment to load and script to execute
       Future.delayed(const Duration(seconds: 1), () {
         if (mounted) {
-          setState(() {
-            _isReady = true;
-          });
-          _loadContent();
+          // Assuming ready after a second as fallback if JS doesn't fire
+          // But usually we wait for 'ready' message
         }
       });
     } catch (e) {
@@ -167,8 +213,12 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
       final action = data['action'];
 
       switch (action) {
+        // 'ready' is sent by JS when Verovio toolkit is initialized
         case 'ready':
-          _isReady = true;
+          debugPrint('Verovio engine reported READY');
+          setState(() {
+             _isReady = true;
+          });
           _loadContent();
           break;
         case 'scoreLoaded':
@@ -208,11 +258,14 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
 
   void _sendToJs(String action, dynamic data) {
     final message = jsonEncode({'action': action, ...data});
-    final script = "handleFlutterMessage('${message.replaceAll("'", "\\'").replaceAll("\n", "\\n")}')";
     
-    if (Platform.isLinux) {
+    if (kIsWeb) {
+      _iframe?.contentWindow?.postMessage(message, '*');
+    } else if (Platform.isLinux) {
+      final script = "handleFlutterMessage('${message.replaceAll("'", "\\'").replaceAll("\n", "\\n")}')";
       _cefController?.executeJavaScript(script);
     } else {
+      final script = "handleFlutterMessage('${message.replaceAll("'", "\\'").replaceAll("\n", "\\n")}')";
       _controller?.runJavaScript(script);
     }
   }
@@ -223,13 +276,23 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
       return _buildError();
     }
 
-    if (_htmlContent == null || (_controller == null && _cefController == null)) {
-      return _buildLoading();
+    if (kIsWeb && _viewType != null) {
+       return Stack(
+          children: [
+             HtmlElementView(viewType: _viewType!),
+             if (_isLoading || !_isReady) _buildLoading(),
+          ]
+       );
+    }
+
+    if (_htmlContent == null && !kIsWeb) { // Logic for native loading
+      if (_controller == null && _cefController == null) {
+          return _buildLoading();
+      }
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // When width changes, notify Verovio to reflow
         if (_isReady) {
           _sendToJs('setWidth', {'width': constraints.maxWidth});
         }
@@ -238,9 +301,9 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
           children: [
             if (Platform.isLinux)
               cef.WebView(_cefController!)
-            else
+            else if (!kIsWeb)
               WebViewWidget(controller: _controller!),
-            if (_isLoading) _buildLoading(),
+            if (_isLoading || !_isReady) _buildLoading(),
           ],
         );
       },

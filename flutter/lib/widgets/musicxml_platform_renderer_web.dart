@@ -1,17 +1,16 @@
 /// Web platform implementation of platform-adaptive MusicXML renderer.
 ///
 /// This file is used on Flutter Web.
-/// It uses the iframe/HtmlElementView-based renderer.
+/// It uses the iframe/HtmlElementView-based renderer (Verovio).
 library;
 
 import 'package:flutter/material.dart';
 
-import 'musicxml_web_renderer.dart';
-import 'musicxml_web_renderer_html.dart';
+import 'musicxml_types.dart';
+import 'musicxml_verovio_renderer.dart';
 
 /// Builds a MusicXML renderer appropriate for the current platform.
 ///
-/// On web platform, this returns a [MusicXmlWebRendererHtml] which uses an iframe.
 Widget buildMusicXmlRenderer({
   Key? key,
   String? musicXml,
@@ -22,7 +21,7 @@ Widget buildMusicXmlRenderer({
   OnError? onError,
   OnReady? onReady,
 }) {
-  return MusicXmlWebRendererHtml(
+  return MusicXmlVerovioRenderer(
     key: key,
     musicXml: musicXml,
     musicXmlUrl: musicXmlUrl,
@@ -30,6 +29,5 @@ Widget buildMusicXmlRenderer({
     backgroundColor: backgroundColor,
     onLoaded: onLoaded,
     onError: onError,
-    onReady: onReady,
   );
 }

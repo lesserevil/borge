@@ -1,7 +1,7 @@
 /// Platform-adaptive MusicXML renderer.
 ///
 /// This file exports the appropriate renderer for the current platform:
-/// - Native (Android, iOS, macOS): Uses WebView-based renderer
+/// - Native (Android, iOS, macOS, Windows, Linux)
 /// - Web: Uses iframe/HtmlElementView-based renderer
 ///
 /// Usage:
@@ -16,13 +16,7 @@
 /// ```
 library;
 
-export 'musicxml_web_renderer.dart'
-    show
-        MusicXmlScoreInfo,
-        MusicXmlRenderOptions,
-        OnScoreLoaded,
-        OnError,
-        OnReady;
+export 'musicxml_types.dart';
 
 export 'musicxml_platform_renderer_native.dart'
     if (dart.library.html) 'musicxml_platform_renderer_web.dart';

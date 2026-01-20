@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import 'musicxml_web_renderer.dart';
+import 'musicxml_types.dart';
 
 /// A MusicXML renderer for Linux that uses the MuseScore (mscore) CLI.
 /// 

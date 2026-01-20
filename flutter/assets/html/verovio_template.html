@@ -92,6 +92,10 @@
                 window.FlutterChannel.postMessage(JSON.stringify({
                     action: 'ready'
                 }));
+            } else if (window.parent) {
+                window.parent.postMessage(JSON.stringify({
+                    action: 'ready'
+                }), '*');
             }
         }
 
@@ -149,6 +153,15 @@
                             composer: ""
                         }
                     }));
+                } else if (window.parent) {
+                    window.parent.postMessage(JSON.stringify({
+                        action: 'scoreLoaded',
+                        data: {
+                            pageCount: pageCount,
+                            title: "",
+                            composer: ""
+                        }
+                    }), '*');
                 }
             } catch (e) {
                 console.error("Error rendering page", e);
@@ -204,6 +217,13 @@
                     break;
             }
         };
+
+        // Listen for messages from parent window (Web IFrame)
+        window.addEventListener('message', function (event) {
+            if (typeof event.data === 'string') {
+                window.handleFlutterMessage(event.data);
+            }
+        });
     </script>
 </body>
 
