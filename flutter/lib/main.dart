@@ -15,7 +15,7 @@ import 'package:webview_cef/webview_cef.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  if (Platform.isLinux) {
+  if (!kIsWeb && Platform.isLinux) {
     await WebviewManager().initialize();
   }
   

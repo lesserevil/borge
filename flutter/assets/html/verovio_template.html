@@ -56,7 +56,7 @@
     <!-- Verovio Toolkit WASM -->
     <!-- Verovio Toolkit WASM -->
     <!-- When loaded via file://, this relative path works if the JS is in the same folder or properly relative -->
-    <script src="verovio-toolkit-wasm.js" defer></script>
+    <script src="../js/verovio-toolkit-wasm.js" defer></script>
 
     <script>
         let vrvToolkit = null;
@@ -112,18 +112,19 @@
             // Set options
             // Verovio expects units in tenths of millimeters (1 unit = 0.1 mm)
             // 2100 = 210mm (A4 width)
-            const defaultOptions = {
+            const vrvOptions = {
                 pageWidth: 2100,
                 pageHeight: 2970,
-                scale: 40,
+                scale: options.zoom ? Math.round(options.zoom * 40) : 40,
                 adjustPageHeight: true,
                 noFooter: true,
                 noHeader: true,
                 breaks: 'auto' // Crucial for REFLOW
             };
 
-            const mergedOptions = { ...defaultOptions, ...options };
-            vrvToolkit.setOptions(mergedOptions);
+            // Only apply options that Verovio might actually understand or which are explicitly prefixed
+            // For now, we prefer our defaults but allow zoom override
+            vrvToolkit.setOptions(vrvOptions);
 
             try {
                 vrvToolkit.loadData(xmlContent);

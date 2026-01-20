@@ -167,8 +167,12 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
       await cef.WebviewManager().ready;
       
       final tempDir = await getTemporaryDirectory();
-      final htmlFile = await _copyAssetToTemp('assets/html/verovio_template.html', 'verovio_template.html', tempDir);
-      await _copyAssetToTemp('assets/js/verovio-toolkit-wasm.js', 'verovio-toolkit-wasm.js', tempDir);
+      final borgeDir = Directory('${tempDir.path}/borge_verovio')..createSync(recursive: true);
+      Directory('${borgeDir.path}/js').createSync(recursive: true);
+      Directory('${borgeDir.path}/html').createSync(recursive: true);
+      
+      final htmlFile = await _copyAssetToTemp('assets/html/verovio_template.html', 'html/verovio_template.html', borgeDir);
+      await _copyAssetToTemp('assets/js/verovio-toolkit-wasm.js', 'js/verovio-toolkit-wasm.js', borgeDir);
       
       debugPrint('Initializing Verovio with file: ${htmlFile.uri}');
       await controller.initialize(htmlFile.uri.toString());
