@@ -12,7 +12,7 @@
             padding: 0;
             width: 100%;
             height: 100%;
-            overflow: hidden;
+            overflow: hidden !important;
             background-color: white;
         }
 
@@ -22,12 +22,14 @@
             display: flex;
             justify-content: center;
             align-items: flex-start;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: hidden !important;
+            /* No scrollbars */
         }
 
         #output {
             width: 100%;
+            height: 100%;
+            overflow: hidden !important;
         }
 
         #loading {
@@ -41,7 +43,8 @@
 
         svg {
             width: 100%;
-            height: auto;
+            height: 100%;
+            /* Fix to container height */
             display: block;
         }
     </style>
@@ -62,6 +65,8 @@
         let vrvToolkit = null;
         let lastXml = null;
         let lastOptions = {};
+        let currentWidth = 2100;
+        let currentHeight = 2970;
 
         // Initialize Verovio
         window.addEventListener('load', () => {
@@ -113,20 +118,17 @@
             // Verovio expects units in tenths of millimeters (1 unit = 0.1 mm)
             // 2100 = 210mm (A4 width)
             const vrvOptions = {
-                pageWidth: 2100,
-                pageHeight: 2970,
+                pageWidth: currentWidth,
+                pageHeight: currentHeight,
                 scale: options.zoom ? Math.round(options.zoom * 40) : 40,
-                adjustPageHeight: true,
+                adjustPageHeight: false, // Enforce PAGINATION instead of scrolling
                 noFooter: true,
                 noHeader: true,
                 breaks: 'auto' // Crucial for REFLOW
             };
 
-            // Only apply options that Verovio might actually understand or which are explicitly prefixed
-            // For now, we prefer our defaults but allow zoom override
-            vrvToolkit.setOptions(vrvOptions);
-
             try {
+                vrvToolkit.setOptions(vrvOptions);
                 vrvToolkit.loadData(xmlContent);
                 renderPage(options.page || 1);
             } catch (e) {
@@ -178,17 +180,29 @@
             if (!vrvToolkit || !lastXml) return;
             const options = { scale: scale };
             vrvToolkit.setOptions(options);
+            vrvToolkit.redoLayout();
             renderPage(1); // Usually reset to page 1 on reflow
         }
 
-        function setWidth(widthInPx) {
+        function setDimensions(widthInPx, heightInPx) {
             if (!vrvToolkit || !lastXml) return;
             // Convert pixels to Verovio units (tenths of mm)
-            // Assuming 96 DPI: 1 inch = 96px = 25.4mm = 254 units.
-            // 1px = 254 / 96 = 2.645 units.
+            currentWidth = Math.round(widthInPx * 2.645);
+            currentHeight = Math.round(heightInPx * 2.645);
+            vrvToolkit.setOptions({
+                pageWidth: currentWidth,
+                pageHeight: currentHeight
+            });
+            vrvToolkit.redoLayout();
+            renderPage(lastOptions.page || 1);
+        }
+
+        // Keep setWidth for backward compatibility if needed
+        function setWidth(widthInPx) {
+            if (!vrvToolkit || !lastXml) return;
             const vrvWidth = Math.round(widthInPx * 2.645);
             vrvToolkit.setOptions({ pageWidth: vrvWidth });
-            renderPage(1);
+            renderPage(lastOptions.page || 1);
         }
 
         function sendError(message) {
@@ -215,6 +229,9 @@
                     break;
                 case 'setWidth':
                     setWidth(data.width);
+                    break;
+                case 'setDimensions':
+                    setDimensions(data.width, data.height);
                     break;
             }
         };

@@ -298,7 +298,10 @@ class _MusicXmlVerovioRendererState extends State<MusicXmlVerovioRenderer> {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (_isReady) {
-          _sendToJs('setWidth', {'width': constraints.maxWidth});
+          _sendToJs('setDimensions', {
+            'width': constraints.maxWidth,
+            'height': constraints.maxHeight,
+          });
         }
 
         return Stack(
