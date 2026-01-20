@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -11,15 +12,16 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
-        html, body {
+
+        html,
+        body {
             width: 100%;
             height: 100%;
             overflow: hidden;
             background-color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-        
+
         #container {
             width: 100%;
             height: 100%;
@@ -27,12 +29,12 @@
             overflow-x: hidden;
             padding: 16px;
         }
-        
+
         #osmd-container {
             width: 100%;
             min-height: 100%;
         }
-        
+
         #loading {
             display: flex;
             flex-direction: column;
@@ -41,11 +43,11 @@
             height: 100%;
             color: #666;
         }
-        
+
         #loading.hidden {
             display: none;
         }
-        
+
         .spinner {
             width: 40px;
             height: 40px;
@@ -55,23 +57,28 @@
             animation: spin 1s linear infinite;
             margin-bottom: 16px;
         }
-        
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
-        
+
         #error {
             display: none;
             padding: 20px;
             color: #c0392b;
             text-align: center;
         }
-        
+
         #error.visible {
             display: block;
         }
-        
+
         /* OSMD styling overrides */
         .osmd-container svg {
             max-width: 100%;
@@ -79,6 +86,7 @@
         }
     </style>
 </head>
+
 <body>
     <div id="container">
         <div id="loading">
@@ -119,55 +127,72 @@
             renderSingleHorizontalStaffline: false,
             // Layout
             stretchLastSystemLine: false,
+            // Pagination
+            drawHiddenViews: false,
         };
 
         // Initialize OSMD
-        function initOSMD(options = {}) {
+        async function initOSMD(options = {}) {
             const mergedOptions = { ...defaultOptions, ...options };
-            
+
             try {
                 osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(
                     'osmd-container',
                     mergedOptions
                 );
-                
+
                 isReady = true;
                 hideLoading();
-                
+
                 // Process any pending MusicXML
                 if (pendingMusicXml) {
-                    loadMusicXml(pendingMusicXml);
+                    await loadMusicXml(pendingMusicXml);
                     pendingMusicXml = null;
                 }
-                
+
+                // If initial page is provided in options, go there
+                if (mergedOptions.initialPage) {
+                    setPage(mergedOptions.initialPage);
+                }
+
                 // Notify Flutter that OSMD is ready
                 sendToFlutter('ready', { success: true });
-                
+
             } catch (error) {
                 showError('Failed to initialize OSMD: ' + error.message);
                 sendToFlutter('error', { message: error.message, type: 'init' });
             }
         }
 
-        // Load MusicXML content
+        // Load MusicXML content (string or base64 mxl)
         async function loadMusicXml(xmlContent) {
             if (!isReady) {
                 pendingMusicXml = xmlContent;
                 return;
             }
-            
+
             showLoading();
             hideError();
-            
+
             try {
+                // Check if it's base64 (likely MXL)
+                const isBase64 = xmlContent.startsWith('data:') ||
+                    (!xmlContent.startsWith('<') && xmlContent.length > 0 && !xmlContent.includes('\n'));
+
+                if (isBase64 && !xmlContent.startsWith('data:')) {
+                    // Assume it's an MXL if it doesn't look like XML text
+                    // You might need to add Mime type if it's not present
+                    // xmlContent = 'data:application/vnd.recordare.musicxml+xml;base64,' + xmlContent;
+                }
+
                 await osmd.load(xmlContent);
                 osmd.render();
                 hideLoading();
-                
+
                 // Send success and score info to Flutter
                 const scoreInfo = getScoreInfo();
                 sendToFlutter('loaded', scoreInfo);
-                
+
             } catch (error) {
                 hideLoading();
                 showError('Failed to render MusicXML: ' + error.message);
@@ -180,18 +205,18 @@
             if (!isReady) {
                 return;
             }
-            
+
             showLoading();
             hideError();
-            
+
             try {
                 await osmd.load(url);
                 osmd.render();
                 hideLoading();
-                
+
                 const scoreInfo = getScoreInfo();
                 sendToFlutter('loaded', scoreInfo);
-                
+
             } catch (error) {
                 hideLoading();
                 showError('Failed to load from URL: ' + error.message);
@@ -204,21 +229,27 @@
             if (!osmd || !osmd.Sheet) {
                 return {};
             }
-            
+
             const sheet = osmd.Sheet;
+            let pageCount = 0;
+            if (osmd.GraphicSheet && osmd.GraphicSheet.MusicPages) {
+                pageCount = osmd.GraphicSheet.MusicPages.length;
+            }
+
             return {
                 title: sheet.TitleString || '',
                 composer: sheet.ComposerString || '',
                 subtitle: sheet.SubtitleString || '',
                 partCount: sheet.Parts ? sheet.Parts.length : 0,
                 measureCount: sheet.SourceMeasures ? sheet.SourceMeasures.length : 0,
+                pageCount: pageCount,
             };
         }
 
         // Update rendering options
         function setOptions(options) {
             if (!osmd) return;
-            
+
             Object.keys(options).forEach(key => {
                 if (osmd.EngravingRules && key in osmd.EngravingRules) {
                     osmd.EngravingRules[key] = options[key];
@@ -226,7 +257,7 @@
                     osmd[key] = options[key];
                 }
             });
-            
+
             // Re-render if already loaded
             if (osmd.Sheet) {
                 osmd.render();
@@ -236,21 +267,46 @@
         // Set zoom level (1.0 = 100%)
         function setZoom(zoomLevel) {
             if (!osmd) return;
-            
+
             osmd.Zoom = zoomLevel;
             if (osmd.Sheet) {
                 osmd.render();
+                // Send updated page info after zoom
+                setTimeout(() => {
+                    const scoreInfo = getScoreInfo();
+                    sendToFlutter('loaded', scoreInfo);
+                }, 100);
+            }
+        }
+
+        // Set page number
+        function setPage(pageNumber) {
+            if (!osmd || !osmd.Sheet || !osmd.GraphicSheet) return;
+
+            const pages = osmd.GraphicSheet.MusicPages;
+            if (!pages || pages.length === 0) return;
+
+            const clampedPage = Math.max(1, Math.min(pageNumber, pages.length));
+
+            // OSMD horizontal paging is tricky. 
+            // A simpler way for this template is to just scroll to the page.
+            // But if we want true "one page at a time" matching Flutter's UI:
+
+            const pageId = `page-container-${clampedPage}`;
+            const element = document.getElementById(pageId);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
             }
         }
 
         // Navigate to a specific measure
         function goToMeasure(measureNumber) {
             if (!osmd || !osmd.Sheet) return;
-            
+
             // Find the measure and scroll to it
             const container = document.getElementById('container');
             const measureElements = document.querySelectorAll('[data-measure]');
-            
+
             // OSMD doesn't have built-in measure navigation, so we use cursor
             if (osmd.cursor) {
                 osmd.cursor.show();
@@ -300,12 +356,12 @@
         // Communication with Flutter
         function sendToFlutter(eventType, data) {
             const message = JSON.stringify({ type: eventType, data: data });
-            
+
             // For webview_flutter JavaScript channel
             if (window.FlutterChannel) {
                 window.FlutterChannel.postMessage(message);
             }
-            
+
             // Fallback for debugging in browser
             console.log('Flutter message:', message);
         }
@@ -315,7 +371,7 @@
             try {
                 const parsed = typeof message === 'string' ? JSON.parse(message) : message;
                 const { action, payload } = parsed;
-                
+
                 switch (action) {
                     case 'init':
                         initOSMD(payload || {});
@@ -331,6 +387,9 @@
                         break;
                     case 'setZoom':
                         setZoom(payload.zoom);
+                        break;
+                    case 'setPage':
+                        setPage(payload.page);
                         break;
                     case 'goToMeasure':
                         goToMeasure(payload.measure);
@@ -368,4 +427,5 @@
         });
     </script>
 </body>
+
 </html>

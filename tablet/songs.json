@@ -1,0 +1,17 @@
+[
+  {
+    "id": "song001",
+    "title": "Morning Light",
+    "artist": "Acme Orchestra"
+  },
+  {
+    "id": "song002",
+    "title": "Evening Breeze",
+    "artist": "Symphony Hall"
+  },
+  {
+    "id": "song003",
+    "title": "Midnight Reverie",
+    "artist": "Nightwaves"
+  }
+]

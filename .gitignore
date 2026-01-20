@@ -5,6 +5,20 @@ flutter/build/
 flutter/.metadata
 flutter/*.iml
 flutter/.idea/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+
+# Flutter Desktop
+flutter/linux/flutter/ephemeral/
+flutter/linux/flutter/generated_plugin_registrant.cc
+flutter/linux/flutter/generated_plugin_registrant.h
+flutter/linux/flutter/generated_plugins.cmake
+flutter/windows/flutter/ephemeral/
+flutter/windows/flutter/generated_plugin_registrant.cc
+flutter/windows/flutter/generated_plugin_registrant.h
+flutter/windows/flutter/generated_plugins.cmake
+flutter/macos/Flutter/ephemeral/
+flutter/macos/Flutter/GeneratedPluginRegistrant.swift
 
 # Pebble
 pebble/build/
@@ -13,6 +27,7 @@ pebble/.lock-waf_*
 # IDE
 .idea/
 *.iml
+.vscode/
 
 # OS
 .DS_Store
@@ -20,7 +35,13 @@ Thumbs.db
 
 # Misc
 *.log
-flutter/.flutter-plugins-dependencies
 __pycache__/
 *.pyc
 tools/.venv/
+*.svg
+*.mss
+
+# FVM Version Cache
+.fvm/
+.pebble_emu.pid
+.beads/last-touched

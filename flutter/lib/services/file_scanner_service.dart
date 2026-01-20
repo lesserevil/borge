@@ -17,8 +17,8 @@ class FileScanException implements Exception {
 
 /// Service for scanning directories for sheet music files.
 class FileScannerService {
-  /// Supported file extensions for sheet music.
-  static const supportedExtensions = {'.pdf', '.png', '.svg', '.musicxml'};
+  /// Supported file extensions for sheet music (MusicXML focus).
+  static const supportedExtensions = {'.musicxml', '.xml', '.mxl'};
 
   /// Scans a directory for sheet music files.
   ///

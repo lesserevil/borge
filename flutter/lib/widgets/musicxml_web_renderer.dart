@@ -12,6 +12,7 @@ class MusicXmlScoreInfo {
   final String subtitle;
   final int partCount;
   final int measureCount;
+  final int pageCount;
 
   const MusicXmlScoreInfo({
     this.title = '',
@@ -19,6 +20,7 @@ class MusicXmlScoreInfo {
     this.subtitle = '',
     this.partCount = 0,
     this.measureCount = 0,
+    this.pageCount = 0,
   });
 
   factory MusicXmlScoreInfo.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,7 @@ class MusicXmlScoreInfo {
       subtitle: json['subtitle'] as String? ?? '',
       partCount: json['partCount'] as int? ?? 0,
       measureCount: json['measureCount'] as int? ?? 0,
+      pageCount: json['pageCount'] as int? ?? 0,
     );
   }
 }
@@ -52,6 +55,9 @@ class MusicXmlRenderOptions {
   /// Zoom level (1.0 = 100%).
   final double zoom;
 
+  /// Initial page to show (1-indexed).
+  final int? initialPage;
+
   const MusicXmlRenderOptions({
     this.drawTitle = true,
     this.drawComposer = true,
@@ -59,6 +65,7 @@ class MusicXmlRenderOptions {
     this.drawTimeSignatures = true,
     this.drawPartNames = true,
     this.zoom = 1.0,
+    this.initialPage,
   });
 
   Map<String, dynamic> toJson() {
@@ -68,6 +75,8 @@ class MusicXmlRenderOptions {
       'drawMeasureNumbers': drawMeasureNumbers,
       'drawTimeSignatures': drawTimeSignatures,
       'drawPartNames': drawPartNames,
+      'zoom': zoom,
+      if (initialPage != null) 'initialPage': initialPage,
     };
   }
 }
@@ -169,11 +178,13 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
         _htmlContent = html;
       });
       _initWebView();
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Failed to load OSMD template: $e');
+      debugPrint('Stack trace: $stackTrace');
       setState(() {
-        _error = 'Failed to load renderer template';
+        _error = 'Failed to load renderer template: $e';
         _isLoading = false;
+        _htmlContent = ''; // Set to empty string to avoid loading spinner loop
       });
     }
   }
@@ -181,33 +192,43 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   void _initWebView() {
     if (_htmlContent == null) return;
 
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(widget.backgroundColor)
-      ..addJavaScriptChannel(
-        'FlutterChannel',
-        onMessageReceived: _handleJsMessage,
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (_) {
-            // Initialize OSMD after page loads
-            _sendToJs('init', widget.options.toJson());
-          },
-          onWebResourceError: (error) {
-            debugPrint('WebView error: ${error.description}');
-            setState(() {
-              _error = error.description;
-              _isLoading = false;
-            });
-          },
-        ),
-      )
-      ..loadHtmlString(_htmlContent!, baseUrl: 'https://localhost');
+    try {
+      final controller = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(widget.backgroundColor)
+        ..addJavaScriptChannel(
+          'FlutterChannel',
+          onMessageReceived: _handleJsMessage,
+        )
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageFinished: (_) {
+              // Initialize OSMD after page loads
+              _sendToJs('init', widget.options.toJson());
+            },
+            onWebResourceError: (error) {
+              debugPrint('WebView error: ${error.description}');
+              setState(() {
+                _error = error.description;
+                _isLoading = false;
+              });
+            },
+          ),
+        )
+        ..loadHtmlString(_htmlContent!, baseUrl: 'https://localhost');
 
-    setState(() {
-      _controller = controller;
-    });
+      setState(() {
+        _controller = controller;
+      });
+    } catch (e) {
+      debugPrint('WebView initialization failed: $e');
+      setState(() {
+        _error = 'WebView is not supported on this platform.\n'
+            'Full MusicXML rendering (OSMD) requires Android or iOS.\n'
+            'Local development on Linux should use the legacy renderer or an emulator.';
+        _isLoading = false;
+      });
+    }
   }
 
   void _handleJsMessage(JavaScriptMessage message) {
@@ -296,11 +317,20 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     _sendToJs('clear');
   }
 
+  /// Set the current page in a paginated view.
+  void setPage(int page) {
+    _sendToJs('setPage', {'page': page});
+  }
+
   @override
   Widget build(BuildContext context) {
     // WebView is not supported on web platform
     if (kIsWeb) {
       return _buildWebFallback();
+    }
+
+    if (_error != null) {
+      return _buildError();
     }
 
     if (_htmlContent == null || _controller == null) {

@@ -3,6 +3,9 @@ class Page {
   /// The page number (1-indexed).
   final int pageNumber;
 
+  /// Internal page number for multi-page files (e.g., MusicXML, PDF).
+  final int? internalPageNumber;
+
   /// Absolute path to the page file.
   final String path;
 
@@ -13,6 +16,7 @@ class Page {
     required this.pageNumber,
     required this.path,
     required this.extension,
+    this.internalPageNumber,
   });
 
   /// Converts to JSON map.
@@ -20,6 +24,7 @@ class Page {
         'page': pageNumber,
         'path': path,
         'extension': extension,
+        if (internalPageNumber != null) 'internalPageNumber': internalPageNumber,
       };
 
   /// Creates from JSON map.
@@ -27,6 +32,7 @@ class Page {
         pageNumber: json['page'] as int,
         path: json['path'] as String,
         extension: json['extension'] as String? ?? '',
+        internalPageNumber: json['internalPageNumber'] as int?,
       );
 
   @override

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Verovio Render</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: white;
+        }
+
+        #container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        #output {
+            width: 100%;
+        }
+
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: sans-serif;
+            color: #666;
+        }
+
+        svg {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <div id="output"></div>
+    </div>
+    <div id="loading">Initialing Verovio...</div>
+
+    <!-- Verovio Toolkit WASM -->
+    <script src="https://www.verovio.org/javascript/latest/verovio-toolkit-wasm.js" defer></script>
+
+    <script>
+        let vrvToolkit = null;
+        let lastXml = null;
+        let lastOptions = {};
+
+        // Initialize Verovio
+        window.addEventListener('load', () => {
+            if (typeof verovio !== 'undefined') {
+                verovio.module.onRuntimeInitialized = () => {
+                    initToolkit();
+                };
+            } else {
+                // Check periodically if not yet loaded
+                const interval = setInterval(() => {
+                    if (typeof verovio !== 'undefined') {
+                        clearInterval(interval);
+                        verovio.module.onRuntimeInitialized = () => {
+                            initToolkit();
+                        };
+                    }
+                }, 100);
+            }
+        });
+
+        function initToolkit() {
+            vrvToolkit = new verovio.toolkit();
+            document.getElementById('loading').style.display = 'none';
+            console.log("Verovio Toolkit initialized");
+
+            if (window.FlutterChannel) {
+                window.FlutterChannel.postMessage(JSON.stringify({
+                    action: 'ready'
+                }));
+            }
+        }
+
+        async function loadMusicXml(xmlContent, options = {}) {
+            if (!vrvToolkit) {
+                lastXml = xmlContent;
+                lastOptions = options;
+                return;
+            }
+
+            console.log("Loading MusicXML...");
+            lastXml = xmlContent;
+
+            // Set options
+            // Verovio expects units in tenths of millimeters (1 unit = 0.1 mm)
+            // 2100 = 210mm (A4 width)
+            const defaultOptions = {
+                pageWidth: 2100,
+                pageHeight: 2970,
+                scale: 40,
+                adjustPageHeight: true,
+                noFooter: true,
+                noHeader: true,
+                breaks: 'auto' // Crucial for REFLOW
+            };
+
+            const mergedOptions = { ...defaultOptions, ...options };
+            vrvToolkit.setOptions(mergedOptions);
+
+            try {
+                vrvToolkit.loadData(xmlContent);
+                renderPage(options.page || 1);
+            } catch (e) {
+                console.error("Error loading MusicXML", e);
+                sendError(e.message);
+            }
+        }
+
+        function renderPage(pageNumber) {
+            if (!vrvToolkit || !lastXml) return;
+
+            try {
+                const svg = vrvToolkit.renderToSVG(pageNumber, {});
+                document.getElementById('output').innerHTML = svg;
+
+                // Get score info
+                const pageCount = vrvToolkit.getPageCount();
+
+                if (window.FlutterChannel) {
+                    window.FlutterChannel.postMessage(JSON.stringify({
+                        action: 'scoreLoaded',
+                        data: {
+                            pageCount: pageCount,
+                            title: "", // Verovio extraction is complex, maybe later
+                            composer: ""
+                        }
+                    }));
+                }
+            } catch (e) {
+                console.error("Error rendering page", e);
+                sendError(e.message);
+            }
+        }
+
+        function setPage(page) {
+            renderPage(page);
+        }
+
+        function setZoom(scale) {
+            if (!vrvToolkit || !lastXml) return;
+            const options = { scale: scale };
+            vrvToolkit.setOptions(options);
+            renderPage(1); // Usually reset to page 1 on reflow
+        }
+
+        function setWidth(widthInPx) {
+            if (!vrvToolkit || !lastXml) return;
+            // Convert pixels to Verovio units (tenths of mm)
+            // Assuming 96 DPI: 1 inch = 96px = 25.4mm = 254 units.
+            // 1px = 254 / 96 = 2.645 units.
+            const vrvWidth = Math.round(widthInPx * 2.645);
+            vrvToolkit.setOptions({ pageWidth: vrvWidth });
+            renderPage(1);
+        }
+
+        function sendError(message) {
+            if (window.FlutterChannel) {
+                window.FlutterChannel.postMessage(JSON.stringify({
+                    action: 'error',
+                    message: message
+                }));
+            }
+        }
+
+        // Handle messages from Flutter
+        window.handleFlutterMessage = function (message) {
+            const data = JSON.parse(message);
+            switch (data.action) {
+                case 'load':
+                    loadMusicXml(data.content, data.options);
+                    break;
+                case 'setPage':
+                    setPage(data.page);
+                    break;
+                case 'setZoom':
+                    setZoom(data.scale);
+                    break;
+                case 'setWidth':
+                    setWidth(data.width);
+                    break;
+            }
+        };
+    </script>
+</body>
+
+</html>

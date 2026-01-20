@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -67,15 +68,9 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       child: Scaffold(
         backgroundColor: Colors.grey[900],
         appBar: AppBar(
-          title: ListenableBuilder(
-            listenable: widget.appState,
-            builder: (context, _) {
-              final song = widget.appState.currentSong;
-              return Text(song?.name ?? 'Sheet Music');
-            },
-          ),
           backgroundColor: Colors.grey[850],
           foregroundColor: Colors.white,
+          title: Text(widget.appState.currentSong?.name ?? 'Sheet Music'),
           actions: [
             ListenableBuilder(
               listenable: widget.appState,
@@ -116,6 +111,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                   child: _SheetMusicPage(
                     page: page,
                     songName: widget.appState.currentSong?.name ?? "",
+                    appState: widget.appState,
                   ),
                 ),
                   // Navigation overlay
@@ -174,8 +170,13 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
 class _SheetMusicPage extends StatefulWidget {
   final models.Page page;
   final String songName;
+  final AppState appState;
 
-  const _SheetMusicPage({required this.page, required this.songName});
+  const _SheetMusicPage({
+    required this.page,
+    required this.songName,
+    required this.appState,
+  });
 
   @override
   State<_SheetMusicPage> createState() => _SheetMusicPageState();
@@ -225,7 +226,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     try {
       if (ext == '.pdf') {
         await _loadPdf();
-      } else if (ext == '.musicxml' || ext == '.xml') {
+      } else if (ext == '.musicxml' || ext == '.xml' || ext == '.mxl') {
         await _loadMusicXml();
       } else {
         // For images and SVGs, just mark as loaded - they load on demand
@@ -249,16 +250,34 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
 
       if (path.startsWith('http://') || path.startsWith('https://')) {
         // Network MusicXML
-        final response = await NetworkAssetBundle(
+        final bytes = await NetworkAssetBundle(
           Uri.parse(path),
-        ).loadString(path);
-        xmlContent = response;
+        ).load(path).then((data) => data.buffer.asUint8List());
+        
+        try {
+          xmlContent = utf8.decode(bytes);
+        } catch (_) {
+          // If UTF-8 fails, treat as binary (MXL) and Base64 encode it
+          xmlContent = base64Encode(bytes);
+        }
       } else if (path.startsWith('assets/')) {
         // Asset MusicXML
-        xmlContent = await rootBundle.loadString(path);
+        try {
+          xmlContent = await rootBundle.loadString(path);
+        } catch (_) {
+          final data = await rootBundle.load(path);
+          final bytes = data.buffer.asUint8List();
+          xmlContent = base64Encode(bytes);
+        }
       } else if (!kIsWeb) {
         // File system MusicXML (not available on web)
-        xmlContent = await io.File(path).readAsString();
+        final file = io.File(path);
+        try {
+          xmlContent = await file.readAsString();
+        } catch (_) {
+          final bytes = await file.readAsBytes();
+          xmlContent = base64Encode(bytes);
+        }
       } else {
         throw Exception('Cannot load local files on web');
       }
@@ -369,6 +388,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
         return _buildImageView(path);
       case '.musicxml':
       case '.xml':
+      case '.mxl':
         return _buildMusicXmlView();
       default:
         return _buildPlaceholder(error: 'Unsupported file type: $ext');
@@ -385,9 +405,20 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     return buildMusicXmlRenderer(
       musicXml: _musicXmlContent!,
       backgroundColor: Colors.white,
+      options: MusicXmlRenderOptions(
+        initialPage: widget.page.internalPageNumber,
+      ),
       onLoaded: (info) {
         debugPrint('MusicXML loaded: ${info.title} by ${info.composer}');
-        debugPrint('Parts: ${info.partCount}, Measures: ${info.measureCount}');
+        debugPrint('Parts: ${info.partCount}, Measures: ${info.measureCount}, Pages: ${info.pageCount}');
+        
+        // Notify AppState to expand document if multiple pages exist
+        if (info.pageCount > 1 && widget.page.internalPageNumber == null) {
+          // We found multiple pages in a single file, expand it in AppState
+          Future.microtask(() {
+            widget.appState.expandDocument(info.pageCount);
+          });
+        }
       },
       onError: (message, type) {
         debugPrint('MusicXML render error ($type): $message');

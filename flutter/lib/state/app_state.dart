@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -99,6 +100,41 @@ class AppState extends ChangeNotifier {
     _currentSong = null;
     _currentPageIndex = 0;
     notifyListeners();
+  }
+
+  /// Expand the current document into multiple logical pages.
+  /// Used for multi-page MusicXML or PDF files identified at runtime.
+  void expandDocument(int internalPageCount) {
+    final song = _currentSong;
+    if (song == null || song.pages.isEmpty) return;
+    
+    // Only expand if it was a single file (typical for MusicXML/PDF)
+    // or if the current page hasn't been expanded yet.
+    final currentPage = song.pages[_currentPageIndex];
+    if (currentPage.internalPageNumber != null) return; // Already expanded or specific page
+
+    // If the song has other pages, we probably don't want to expand
+    // unless we replace JUST the current page with its expanded versions.
+    if (song.pages.length == 1) {
+      final newPages = <Page>[];
+      for (var i = 1; i <= internalPageCount; i++) {
+        newPages.add(Page(
+          pageNumber: i,
+          path: currentPage.path,
+          extension: currentPage.extension,
+          internalPageNumber: i,
+        ));
+      }
+      
+      _currentSong = Song(
+        id: song.id,
+        name: song.name,
+        pages: newPages,
+        directoryPath: song.directoryPath,
+      );
+      // Stay on the same logical index (0), which is now the first internal page
+      notifyListeners();
+    }
   }
 
   /// Initialize the app state.
@@ -216,25 +252,28 @@ class AppState extends ChangeNotifier {
     final songs = <Song>[];
 
     try {
-      // Use Flutter's AssetManifest which handles both old and new formats
       final assetManifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      final allAssets = assetManifest.listAssets();
-
-      // Find all files in assets/music/
-      final musicAssets = allAssets
+      final musicAssets = assetManifest.listAssets()
           .where((key) => key.startsWith('assets/music/'))
           .toList();
 
-      if (musicAssets.isEmpty) {
-        debugPrint('No music assets found in assets/music/');
+      debugPrint('Found ${musicAssets.length} music assets: $musicAssets');
+
+      // Filter for MusicXML extensions only
+      const musicXmlExtensions = ['.musicxml', '.xml', '.mxl'];
+      final filteredAssets = musicAssets.where((asset) {
+        final ext = _getFileExtension(asset);
+        return musicXmlExtensions.contains(ext);
+      }).toList();
+
+      if (filteredAssets.isEmpty) {
+        debugPrint('No MusicXML assets found');
         return songs;
       }
 
-      debugPrint('Found ${musicAssets.length} music assets: $musicAssets');
-
       // Group files by directory (song)
       final Map<String, List<String>> songFiles = {};
-      for (final asset in musicAssets) {
+      for (final asset in filteredAssets) {
         // Extract the song directory name
         // e.g., "assets/music/MySong/page1.png" -> "MySong"
         // e.g., "assets/music/FurElise.musicxml" -> "FurElise"

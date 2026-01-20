@@ -38,3 +38,15 @@ bd sync               # Sync with git
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+## Automation & Tooling
+
+All common development tasks MUST be defined as `make` targets in the root `Makefile`. Agents MUST use these targets instead of running raw commands (e.g., `flutter build`, `rm -rf build`, etc.).
+
+**REQUIRED TARGET CATEGORIES:**
+1. **Cleaning**: `make clean` (must clean all temporary build artifacts)
+2. **Building**: `make build` (must build all core components)
+3. **Testing**: `make test` (must run all unit and integration tests)
+4. **Packaging**: `make package` (must produce final distributable artifacts)
+
+If a target is missing for a task you need to perform, you MUST add it to the `Makefile` first, then use it.
+

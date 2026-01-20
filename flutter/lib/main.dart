@@ -5,10 +5,20 @@ import 'package:flutter/material.dart';
 
 import 'screens/screens.dart';
 import 'services/remote_control_service.dart';
+import 'services/rest_api_controller.dart';
+import 'services/song_navigation_controller.dart';
+import 'services/song_repository.dart';
 import 'state/state.dart';
 
-void main() {
+import 'package:webview_cef/webview_cef.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  if (Platform.isLinux) {
+    await WebviewManager().initialize();
+  }
+  
   runApp(const BorgeApp());
 }
 
@@ -23,6 +33,8 @@ class BorgeApp extends StatefulWidget {
 class _BorgeAppState extends State<BorgeApp> {
   final AppState _appState = AppState();
   RemoteControlService? _remoteControlService;
+  RestApiController? _restApiController;
+  SongNavigationController? _songNavigationController;
   bool _initialized = false;
 
   @override
@@ -45,6 +57,21 @@ class _BorgeAppState extends State<BorgeApp> {
         // Set device name based on device model (could be customized in settings)
         _remoteControlService!.setDeviceName('Borge Viewer');
       }
+
+      // Initialize song navigation controller
+      _songNavigationController = SongNavigationController(appState: _appState, port: 3001);
+      await _songNavigationController!.start();
+
+      // Initialize REST API controller on native platforms
+      if (!kIsWeb) {
+        // Create a SongRepository instance to use with the REST API
+        final songRepository = SongRepository();
+        _restApiController = RestApiController(
+          songRepository: songRepository,
+          appState: _appState,
+        );
+        await _restApiController!.start();
+      }
     }
     setState(() {
       _initialized = true;
@@ -54,6 +81,8 @@ class _BorgeAppState extends State<BorgeApp> {
   @override
   void dispose() {
     _remoteControlService?.dispose();
+    _restApiController?.stop();
+    _songNavigationController?.stop();
     _appState.dispose();
     super.dispose();
   }

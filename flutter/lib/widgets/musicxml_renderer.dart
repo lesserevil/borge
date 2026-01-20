@@ -26,9 +26,22 @@ class MusicXmlRenderer extends StatelessWidget {
     this.foregroundColor = Colors.black,
   });
 
-  /// Parse MusicXML from a string.
+  /// Parse MusicXML from a string, with basic sanitization for unsupported features.
   static MusicXmlDocument parse(String xmlContent) {
-    return MusicXmlDocument.parse(xmlContent);
+    try {
+      return MusicXmlDocument.parse(xmlContent);
+    } catch (e) {
+      if (e.toString().contains('Unpitched')) {
+        debugPrint('Sanitizing MusicXML to remove unsupported unpitched notes...');
+        // Remove all <unpitched> tags and their contents to allow parsing of the rest
+        final sanitized = xmlContent.replaceAll(
+          RegExp(r'<unpitched>.*?</unpitched>', dotAll: true),
+          '',
+        );
+        return MusicXmlDocument.parse(sanitized);
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -246,10 +259,15 @@ class _MusicXmlPainter extends CustomPainter {
     final noteWidth = (width - 40) / (measure.notes.length.clamp(1, 100));
 
     for (final note in measure.notes) {
-      if (!note.isRest) {
-        _drawNote(canvas, note, noteX, y, fillPaint, strokePaint);
-      } else {
-        _drawRest(canvas, note, noteX, y, fillPaint);
+      try {
+        if (!note.isRest) {
+          _drawNote(canvas, note, noteX, y, fillPaint, strokePaint);
+        } else {
+          _drawRest(canvas, note, noteX, y, fillPaint);
+        }
+      } catch (e) {
+        // Skip notes that cause errors (e.g., unpitched notes)
+        debugPrint('Skipping note: $e');
       }
       noteX += noteWidth.clamp(noteSpacing / 2, noteSpacing * 2);
     }
