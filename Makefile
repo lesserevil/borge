@@ -60,6 +60,12 @@ clean-flutter-native:
 	@echo "🧹 Cleaning native Flutter build artifacts..."
 	@cd $(FLUTTER_DIR) && rm -rf build/linux
 
+# Run the Flutter app in Chrome (Web)
+.PHONY: flutter-run-web
+flutter-run-web:
+	@echo "🌐 Running Flutter app in Chrome..."
+	@cd $(FLUTTER_DIR) && $(FLUTTER) run -d chrome
+
 # Alternative: build a release APK for Android (if needed)
 flutter-build-apk:
 	@echo "🔨 Building Flutter APK for Android..."
@@ -139,6 +145,6 @@ package: flutter-build-apk
 	@echo "📦 All packaged."
 
 .PHONY: pebble-build tablet-server kill-tablet-server run test-local stop-local \
-	flutter-build-native flutter-run-native clean-flutter-native \
+	flutter-build-native flutter-run-native flutter-run-web clean-flutter-native \
 	flutter-build-apk flutter-run-apk clean-flutter-apk \
 	clean build test package
