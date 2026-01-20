@@ -63,8 +63,8 @@ clean-flutter-native:
 # Run the Flutter app in Chrome (Web)
 .PHONY: flutter-run-web
 flutter-run-web:
-	@echo "🌐 Running Flutter app in Chrome..."
-	@cd $(FLUTTER_DIR) && $(FLUTTER) run -d chrome
+	@echo "🌐 Serving Flutter app on http://localhost:8080 ..."
+	@cd $(FLUTTER_DIR) && $(FLUTTER) run -d web-server --web-port 8080 --web-hostname 0.0.0.0
 
 # Alternative: build a release APK for Android (if needed)
 flutter-build-apk:
