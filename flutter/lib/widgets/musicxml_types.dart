@@ -9,6 +9,9 @@ class MusicXmlScoreInfo {
   final int measureCount;
   final int pageCount;
 
+  final int lastFittingMeasure;
+  final int totalMeasureCount;
+
   const MusicXmlScoreInfo({
     this.title = '',
     this.composer = '',
@@ -16,6 +19,8 @@ class MusicXmlScoreInfo {
     this.partCount = 0,
     this.measureCount = 0,
     this.pageCount = 0,
+    this.lastFittingMeasure = -1,
+    this.totalMeasureCount = 0,
   });
 
   factory MusicXmlScoreInfo.fromJson(Map<String, dynamic> json) {
@@ -26,6 +31,8 @@ class MusicXmlScoreInfo {
       partCount: json['partCount'] as int? ?? 0,
       measureCount: json['measureCount'] as int? ?? 0,
       pageCount: json['pageCount'] as int? ?? 0,
+      lastFittingMeasure: json['lastFittingMeasure'] as int? ?? -1,
+      totalMeasureCount: json['totalMeasureCount'] as int? ?? 0,
     );
   }
 }
@@ -53,6 +60,9 @@ class MusicXmlRenderOptions {
   /// Initial page to show (1-indexed).
   final int? initialPage;
 
+  /// Current page to show (1-indexed).
+  final int? currentPage;
+
   const MusicXmlRenderOptions({
     this.drawTitle = true,
     this.drawComposer = true,
@@ -61,6 +71,7 @@ class MusicXmlRenderOptions {
     this.drawPartNames = true,
     this.zoom = 1.0,
     this.initialPage,
+    this.currentPage,
   });
 
   Map<String, dynamic> toJson() {
@@ -72,6 +83,7 @@ class MusicXmlRenderOptions {
       'drawPartNames': drawPartNames,
       'zoom': zoom,
       if (initialPage != null) 'initialPage': initialPage,
+      if (currentPage != null) 'currentPage': currentPage,
     };
   }
 }

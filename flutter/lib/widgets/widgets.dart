@@ -4,5 +4,7 @@
 library;
 
 export 'musicxml_types.dart';
-export 'musicxml_verovio_renderer.dart';
+
+export 'musicxml_web_renderer.dart';
+// export 'musicxml_web_renderer_html.dart'; // Web only
 export 'musicxml_platform_renderer.dart';

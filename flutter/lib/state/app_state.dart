@@ -13,11 +13,20 @@ class AppState extends ChangeNotifier {
   Song? _currentSong;
   int _currentPageIndex = 0;
   bool _isLoading = false;
+  double _zoom = 1.0;
 
   final MusicLibraryService _musicLibrary = MusicLibraryService();
 
   /// The music library service for managing folders.
   MusicLibraryService get musicLibrary => _musicLibrary;
+
+  /// Zoom level (1.0 = 100%).
+  double get zoom => _zoom;
+  set zoom(double value) {
+    if (_zoom == value) return;
+    _zoom = value;
+    notifyListeners();
+  }
 
   /// List of registered music folders.
   List<String> get musicFolders => _musicLibrary.folders;
@@ -108,33 +117,51 @@ class AppState extends ChangeNotifier {
     final song = _currentSong;
     if (song == null || song.pages.isEmpty) return;
     
-    // Only expand if it was a single file (typical for MusicXML/PDF)
-    // or if the current page hasn't been expanded yet.
-    final currentPage = song.pages[_currentPageIndex];
-    if (currentPage.internalPageNumber != null) return; // Already expanded or specific page
-
-    // If the song has other pages, we probably don't want to expand
-    // unless we replace JUST the current page with its expanded versions.
-    if (song.pages.length == 1) {
-      final newPages = <Page>[];
-      for (var i = 1; i <= internalPageCount; i++) {
-        newPages.add(Page(
-          pageNumber: i,
-          path: currentPage.path,
-          extension: currentPage.extension,
-          internalPageNumber: i,
-        ));
+    // Only expand if it's currently a single-file song or if we're updating 
+    // an already expanded multi-page song from the same source.
+    // If the internal page count matches our current pages length, skip.
+    if (song.pages.length == internalPageCount) {
+      // Check if at least one page has an internalPageNumber (meaning it's already expanded)
+      if (song.pages.any((p) => p.internalPageNumber != null)) {
+        return;
       }
-      
-      _currentSong = Song(
-        id: song.id,
-        name: song.name,
-        pages: newPages,
-        directoryPath: song.directoryPath,
-      );
-      // Stay on the same logical index (0), which is now the first internal page
-      notifyListeners();
     }
+
+    // We only support expanding songs that consist of a single source file.
+    // If the song has different paths for different pages, it's a true multi-file song.
+    final firstPath = song.pages.first.path;
+    final isSingleSource = song.pages.every((p) => p.path == firstPath);
+    
+    if (!isSingleSource) {
+      debugPrint('Song ${song.name} has multiple source files, skipping expansion.');
+      return;
+    }
+
+    final currentPage = song.pages[0]; // Use the first page as template
+    final newPages = <Page>[];
+    for (var i = 1; i <= internalPageCount; i++) {
+      newPages.add(Page(
+        pageNumber: i,
+        path: currentPage.path,
+        extension: currentPage.extension,
+        internalPageNumber: i,
+      ));
+    }
+    
+    _currentSong = Song(
+      id: song.id,
+      name: song.name,
+      pages: newPages,
+      directoryPath: song.directoryPath,
+    );
+    
+    // Keep current page index within bounds if page count decreased
+    if (_currentPageIndex >= internalPageCount) {
+      _currentPageIndex = internalPageCount - 1;
+    }
+    
+    debugPrint('Expanded ${song.name} to $internalPageCount pages.');
+    notifyListeners();
   }
 
   /// Initialize the app state.

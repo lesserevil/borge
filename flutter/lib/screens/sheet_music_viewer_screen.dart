@@ -54,6 +54,12 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         widget.appState.goToPage(0);
       } else if (event.logicalKey == LogicalKeyboardKey.end) {
         widget.appState.goToPage(widget.appState.totalPages - 1);
+      } else if (event.logicalKey == LogicalKeyboardKey.equal ||
+                 event.logicalKey == LogicalKeyboardKey.add) {
+        widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
+      } else if (event.logicalKey == LogicalKeyboardKey.minus ||
+                 event.logicalKey == LogicalKeyboardKey.underscore) {
+        widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         Navigator.of(context).pop();
       }
@@ -72,6 +78,16 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
           foregroundColor: Colors.white,
           title: Text(widget.appState.currentSong?.name ?? 'Sheet Music'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.zoom_out),
+              onPressed: () => widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.5, 3.0),
+              tooltip: 'Zoom Out',
+            ),
+            IconButton(
+              icon: const Icon(Icons.zoom_in),
+              onPressed: () => widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.5, 3.0),
+              tooltip: 'Zoom In',
+            ),
             ListenableBuilder(
               listenable: widget.appState,
               builder: (context, _) {
@@ -109,6 +125,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                   // Sheet music display
                 SizedBox.expand(
                   child: _SheetMusicPage(
+                    key: ValueKey(page.path),
                     page: page,
                     songName: widget.appState.currentSong?.name ?? "",
                     appState: widget.appState,
@@ -173,6 +190,7 @@ class _SheetMusicPage extends StatefulWidget {
   final AppState appState;
 
   const _SheetMusicPage({
+    super.key,
     required this.page,
     required this.songName,
     required this.appState,
@@ -400,13 +418,15 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       return _buildPlaceholder(error: 'MusicXML content not loaded');
     }
 
-    // Use platform-adaptive Verovio renderer for high-quality notation
+    // Use platform-adaptive MusicXML renderer for high-quality notation
     // Automatically selects WebView (native) or iframe (web) implementation
     return buildMusicXmlRenderer(
+      key: ValueKey('musicxml-${widget.page.path}'),
       musicXml: _musicXmlContent!,
       backgroundColor: Colors.white,
       options: MusicXmlRenderOptions(
         initialPage: widget.page.internalPageNumber,
+        zoom: widget.appState.zoom,
       ),
       onLoaded: (info) {
         debugPrint('MusicXML loaded: ${info.title} by ${info.composer}');

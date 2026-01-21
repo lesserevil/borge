@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MusicXML Renderer</title>
+    <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.0/build/opensheetmusicdisplay.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color, #ffffff);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            padding: 40px;
+            scroll-behavior: smooth;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            background-color: #f8f9fa;
+        }
+
+        #osmd-container {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: flex-start;
+            min-width: 100%;
+            /* Ensure OSMD has width to work with */
+        }
+
+        /* Style the pages for a premium look */
+        div[id^="osmdCanvasPage"] {
+            background-color: white !important;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12) !important;
+            border: 1px solid #e0e0e0 !important;
+            margin: 0 40px !important;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            flex-shrink: 0 !important;
+        }
+
+        #loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+        }
+
+        #loading.hidden {
+            display: none;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        #error {
+            display: none;
+            padding: 20px;
+            color: #c0392b;
+            text-align: center;
+        }
+
+        #error.visible {
+            display: block;
+        }
+
+        /* OSMD styling overrides */
+        .osmd-container svg {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container">
+        <div id="loading">
+            <div class="spinner"></div>
+            <span>Loading sheet music...</span>
+        </div>
+        <div id="error"></div>
+        <div id="osmd-container"></div>
+    </div>
+
+    <script>
+        // Global state
+        let osmd = null;
+        let isReady = false;
+        let pendingMusicXml = null;
+        let frameId = null;
+
+        // Configuration options
+        const defaultOptions = {
+            autoResize: true,
+            drawTitle: true,
+            drawSubtitle: true,
+            drawComposer: true,
+            drawLyricist: true,
+            drawPartNames: true,
+            drawPartAbbreviations: false,
+            drawMeasureNumbers: true,
+            drawMeasureNumbersOnlyAtSystemStart: true,
+            drawTimeSignatures: true,
+            drawMetronomeMarks: true,
+            drawCredits: true,
+            drawSlurs: true,
+            drawFingerings: true,
+            fingeringPosition: 'auto',
+            followCursor: false,
+            setWantedStemDirectionByXml: true,
+            backend: 'svg',
+            renderSingleHorizontalStaffline: false,
+            stretchLastSystemLine: false,
+        };
+
+        // Parse URL parameters for initial config
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                frameId: params.get('frameId'),
+                bgColor: params.get('bgColor'),
+            };
+        }
+
+        // Initialize on load
+        function init() {
+            const params = getUrlParams();
+            frameId = params.frameId;
+
+            if (params.bgColor) {
+                document.documentElement.style.setProperty('--bg-color', params.bgColor);
+                document.body.style.backgroundColor = params.bgColor;
+            }
+
+            // Listen for messages from parent window (Flutter)
+            window.addEventListener('message', handleMessage);
+
+            // Initialize OSMD
+            initOSMD();
+        }
+
+        // Initialize OSMD
+        function initOSMD(options = {}) {
+            const mergedOptions = { ...defaultOptions, ...options };
+
+            try {
+                osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(
+                    'osmd-container',
+                    mergedOptions
+                );
+
+                isReady = true;
+                hideLoading();
+
+                // Process any pending MusicXML
+                if (pendingMusicXml) {
+                    loadMusicXml(pendingMusicXml);
+                    pendingMusicXml = null;
+                }
+
+                // Notify Flutter that OSMD is ready
+                sendToFlutter('ready', { success: true });
+
+            } catch (error) {
+                showError('Failed to initialize OSMD: ' + error.message);
+                sendToFlutter('error', { message: error.message, type: 'init' });
+            }
+        }
+
+        // Load MusicXML content
+        async function loadMusicXml(xmlContent) {
+            console.log("OSMD: loadMusicXml called with type: " + typeof xmlContent);
+
+            // Handle cases where we might get the payload object instead of the string
+            if (xmlContent && typeof xmlContent === 'object' && xmlContent.xml) {
+                console.log("OSMD: Detected object payload, extracting xml string");
+                xmlContent = xmlContent.xml;
+            } else if (xmlContent && typeof xmlContent === 'object') {
+                console.log("OSMD: Detected object payload without xml key, stringifying:", JSON.stringify(xmlContent).substring(0, 50));
+                // If it's the whole payload, we might need to drill down
+                if (xmlContent.payload && xmlContent.payload.xml) {
+                    xmlContent = xmlContent.payload.xml;
+                }
+            }
+
+            if (!isReady) {
+                console.log("OSMD: Not ready, storing pending XML");
+                pendingMusicXml = xmlContent;
+                return;
+            }
+
+            if (typeof xmlContent !== 'string') {
+                console.error("OSMD: xmlContent is still not a string! Type: " + typeof xmlContent);
+                console.log("Value:", xmlContent);
+                hideLoading();
+                return;
+            }
+
+            console.log("OSMD: xmlContent summary:", xmlContent.substring(0, 100));
+
+            try {
+                await osmd.load(xmlContent);
+
+                // Re-apply options after loading to ensure pagination
+                setOptions({});
+
+                hideLoading();
+
+                // Send success and score info to Flutter
+                const scoreInfo = getScoreInfo();
+                sendToFlutter('loaded', scoreInfo);
+
+            } catch (error) {
+                hideLoading();
+                showError('Failed to render MusicXML: ' + error.message);
+                sendToFlutter('error', { message: error.message, type: 'load' });
+            }
+        }
+
+        // Load MusicXML from URL
+        async function loadFromUrl(url) {
+            if (!isReady) {
+                return;
+            }
+
+            showLoading();
+            hideError();
+
+            try {
+                await osmd.load(url);
+                osmd.render();
+                hideLoading();
+
+                const scoreInfo = getScoreInfo();
+                sendToFlutter('loaded', scoreInfo);
+
+            } catch (error) {
+                hideLoading();
+                showError('Failed to load from URL: ' + error.message);
+                sendToFlutter('error', { message: error.message, type: 'url' });
+            }
+        }
+
+        // Get information about the loaded score
+        function getScoreInfo() {
+            if (!osmd || !osmd.Sheet) {
+                return {};
+            }
+
+            const sheet = osmd.Sheet;
+            let pageCount = 0;
+
+            console.log("OSMD: getScoreInfo checking pages...");
+            // Try different ways to get page count depending on OSMD version/state
+            if (osmd.GraphicSheet && osmd.GraphicSheet.MusicPages) {
+                pageCount = osmd.GraphicSheet.MusicPages.length;
+                console.log("OSMD: Found " + pageCount + " MusicPages in GraphicSheet");
+            }
+
+            if (pageCount === 0 && osmd.Drawer && osmd.Drawer.Pages) {
+                pageCount = osmd.Drawer.Pages.length;
+                console.log("OSMD: Found " + pageCount + " Pages in Drawer");
+            }
+
+            console.log("OSMD Final Page Count: " + pageCount);
+
+            return {
+                title: sheet.TitleString || '',
+                composer: sheet.ComposerString || '',
+                subtitle: sheet.SubtitleString || '',
+                partCount: sheet.Parts ? sheet.Parts.length : 0,
+                measureCount: sheet.SourceMeasures ? sheet.SourceMeasures.length : 0,
+                pageCount: pageCount || 1,
+            };
+        }
+
+        // Update rendering options
+        async function setOptions(options) {
+            if (!osmd) return;
+
+            const container = document.getElementById('osmd-container');
+
+            // Width-retry logic
+            let width = container.clientWidth;
+            let retries = 5;
+            while (width === 0 && retries > 0) {
+                console.log("OSMD: Container width is 0, retrying... (" + retries + " left)");
+                await new Promise(resolve => setTimeout(resolve, 100));
+                width = container.clientWidth;
+                retries--;
+            }
+
+            console.log("OSMD: setOptions with width: " + width);
+
+            // Force discrete A5 format
+            osmd.setOptions({
+                autoLayout: true,
+                drawHiddenViews: false,
+                ...options,
+                pageFormat: "A4", // Back to A4 for a baseline
+                verticalScrolling: false,
+            });
+
+            // Enforce discrete pages in EngravingRules
+            if (osmd.rules) {
+                osmd.rules.VerticalScrolling = false;
+
+                // CRITICAL: Try to force a split by making the page height TINY 
+                // and ensuring the rules don't allow stretching/overflow
+                osmd.rules.PageHeight = 300; // 30mm
+                osmd.rules.PageWidth = 1480;
+                osmd.rules.LimitSystemWidth = true; // Ensure systems don't exceed page width
+
+                // Allow line breaks more aggressively
+                osmd.rules.CompactMode = true;
+
+                console.log("OSMD: Rules forced PageHeight=" + osmd.rules.PageHeight);
+            }
+
+            // Re-render if already loaded
+            if (osmd.Sheet) {
+                console.log("OSMD: Rendering score...");
+                osmd.render();
+
+                // Some versions of OSMD need a forced layout update for pagination
+                if (osmd.GraphicSheet && osmd.GraphicSheet.reLayout) {
+                    console.log("OSMD: FORCING GraphicSheet.reLayout()");
+                    osmd.GraphicSheet.reLayout();
+                }
+
+                // Allow time for DOM to populate, then retry if needed
+                let retryCount = 0;
+                const attemptReport = () => {
+                    if (retryCount < 10) {
+                        // Check if BoundingBox is ready
+                        if (osmd.GraphicSheet && osmd.GraphicSheet.MusicPages.length > 0) {
+                            const firstPage = osmd.GraphicSheet.MusicPages[0];
+                            if (firstPage.BoundingBox) {
+                                console.log("OSMD: BoundingBox ready, reporting score info");
+                                reportScoreInfoSafe();
+                                return;
+                            }
+                        }
+                        retryCount++;
+                        console.log(`OSMD: BoundingBox not ready, retry ${retryCount}/10`);
+                        setTimeout(attemptReport, 200);
+                    } else {
+                        console.log("OSMD: BoundingBox never populated, reporting anyway");
+                        reportScoreInfoSafe();
+                    }
+                };
+                setTimeout(attemptReport, 300);
+            }
+        }
+
+        function reportScoreInfoSafe() {
+            try {
+                const info = getScoreInfo();
+
+                // Detect how many systems fit and report overflow info
+                const detectionResult = detectFittingSystems();
+                info.fittingSystems = detectionResult.fittingSystems;
+                info.totalSystems = detectionResult.totalSystems;
+                info.lastFittingMeasure = detectionResult.lastFittingMeasure;
+                info.canvasOverflow = detectionResult.canvasHeight > detectionResult.maxHeight;
+
+                const canvases = document.querySelectorAll('div[id^="osmdCanvasPage"]');
+                console.log("OSMD: Discrete pages in DOM: " + canvases.length);
+
+                if (osmd.GraphicSheet && osmd.GraphicSheet.MusicPages) {
+                    console.log("OSMD: GraphicSheet.MusicPages after render and reLayout:", osmd.GraphicSheet.MusicPages.length);
+                }
+
+                console.log("OSMD Info after render:", info);
+                sendToFlutter('loaded', info);
+            } catch (e) {
+                console.error("OSMD: Error reporting info:", e);
+                // Try to send minimal info
+                try {
+                    const minimalInfo = getScoreInfo();
+                    sendToFlutter('loaded', minimalInfo);
+                } catch (e2) {
+                    console.error("OSMD: Fatal error reporting info", e2);
+                }
+            }
+        }
+
+        // Detect how many music systems (lines) fit within the viewport
+        function detectFittingSystems() {
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages.length) {
+                console.log("OSMD: detect - Early exit (no osmd/sheet/pages)");
+                return { fittingSystems: 0, totalSystems: 0, lastFittingMeasure: -1 };
+            }
+
+            const page = osmd.GraphicSheet.MusicPages[0];
+            const container = document.getElementById('container');
+            const maxHeight = container.clientHeight - 100;
+
+            // Count total systems
+            const totalSystems = page.MusicSystems ? page.MusicSystems.length : 0;
+
+            console.log(`OSMD: detect - Total systems on page: ${totalSystems}`);
+
+            // Try canvas-based detection since BoundingBox is unreliable
+            let canvasPage = document.querySelector('div[id^="osmdCanvasPage"]');
+            if (!canvasPage) {
+                console.log("OSMD: detect - No canvas element found");
+                return { fittingSystems: 0, totalSystems, lastFittingMeasure: -1 };
+            }
+
+            const canvasHeight = canvasPage.clientHeight;
+            console.log(`OSMD: detect - Canvas: height=${canvasHeight}px, maxHeight=${maxHeight}px`);
+
+            if (canvasHeight <= maxHeight) {
+                console.log("OSMD: detect - All content fits in viewport");
+                return { fittingSystems: totalSystems, totalSystems, lastFittingMeasure: -1 };
+            }
+
+            // Content overflows - estimate how many systems fit
+            // Use a system-based ratio approach
+            if (totalSystems > 0) {
+                // Assume systems are evenly distributed vertically
+                const visibleRatio = maxHeight / canvasHeight;
+                const estimatedFittingSystems = Math.floor(totalSystems * visibleRatio);
+
+                console.log(`OSMD: detect - Estimated ${estimatedFittingSystems}/${totalSystems} systems fit (${(visibleRatio * 100).toFixed(1)}% visible)`);
+
+                // Get the last measure from the last fitting system
+                let lastFittingMeasure = -1;
+                if (page.MusicSystems && estimatedFittingSystems > 0 && estimatedFittingSystems <= totalSystems) {
+                    const lastSystem = page.MusicSystems[estimatedFittingSystems - 1];
+                    if (lastSystem && lastSystem.Staves && lastSystem.Staves.length > 0) {
+                        for (const staff of lastSystem.Staves) {
+                            if (staff.Measures && staff.Measures.length > 0) {
+                                for (const measure of staff.Measures) {
+                                    let idx = -1;
+                                    if (measure.parentSourceMeasure) {
+                                        idx = measure.parentSourceMeasure.measureListIndex;
+                                    } else if (measure.MeasureNumber) {
+                                        idx = measure.MeasureNumber - 1;
+                                    }
+                                    lastFittingMeasure = Math.max(lastFittingMeasure, idx);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                console.log(`OSMD: detect - Last fitting measure index: ${lastFittingMeasure}`);
+
+                return {
+                    fittingSystems: estimatedFittingSystems,
+                    totalSystems,
+                    lastFittingMeasure,
+                    canvasHeight,
+                    maxHeight,
+                    visibleRatio
+                };
+            }
+
+            return { fittingSystems: 0, totalSystems, lastFittingMeasure: -1 };
+        }
+
+        // Set zoom level (1.0 = 100%)
+        function setZoom(zoomLevel) {
+            if (!osmd) return;
+
+            console.log("OSMD: setZoom to " + zoomLevel);
+            osmd.Zoom = zoomLevel;
+
+            // Re-apply options which calls render and updates page info
+            setOptions({});
+        }
+
+        // Set current page
+        function setPage(pageNumber) {
+            console.log("OSMD: Setting page to " + pageNumber);
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages) return;
+
+            const pageDiv = document.getElementById(`osmdCanvasPage${pageNumber}`);
+            if (pageDiv) {
+                const container = document.getElementById('container');
+
+                // If horizontal paging is active
+                if (!osmd.rules.VerticalScrolling) {
+                    container.scrollLeft = pageDiv.offsetLeft - container.offsetLeft;
+                } else {
+                    container.scrollTop = pageDiv.offsetTop - container.offsetTop;
+                }
+            }
+        }
+
+        // Navigate to a specific measure
+        function goToMeasure(measureNumber) {
+            if (!osmd || !osmd.Sheet) return;
+
+            if (osmd.cursor) {
+                osmd.cursor.show();
+                osmd.cursor.reset();
+                for (let i = 0; i < measureNumber - 1; i++) {
+                    osmd.cursor.next();
+                }
+            }
+        }
+
+        // Clear the current score
+        function clear() {
+            if (osmd) {
+                osmd.clear();
+            }
+            hideError();
+        }
+
+        // UI helpers
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.classList.add('visible');
+        }
+
+        function hideError() {
+            document.getElementById('error').classList.remove('visible');
+        }
+
+        // Communication with Flutter (via postMessage to parent)
+        function sendToFlutter(eventType, data) {
+            const message = {
+                type: eventType,
+                data: data,
+                frameId: frameId,
+            };
+
+            // Post message to parent window (Flutter web app)
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage(message, '*');
+            }
+
+            // Also log for debugging
+            console.log('OSMD -> Flutter:', message);
+        }
+
+        // Handle messages from Flutter
+        function handleMessage(event) {
+            // Validate origin in production
+            // if (event.origin !== expectedOrigin) return;
+
+            try {
+                const data = event.data;
+                if (!data || !data.action) return;
+
+                // Check if message is for this frame
+                if (data.targetFrameId && data.targetFrameId !== frameId) return;
+
+                const { action, payload } = data;
+
+                switch (action) {
+                    case 'init':
+                        if (!isReady) {
+                            initOSMD(payload || {});
+                        }
+                        break;
+                    case 'load':
+                        loadMusicXml(payload.xml);
+                        break;
+                    case 'loadUrl':
+                        loadFromUrl(payload.url);
+                        break;
+                    case 'setOptions':
+                        setOptions(payload);
+                        break;
+                    case 'setZoom':
+                        setZoom(payload.zoom);
+                        break;
+                    case 'setPage':
+                        setPage(payload.page);
+                        break;
+                    case 'goToMeasure':
+                        goToMeasure(payload.measure);
+                        break;
+                    case 'clear':
+                        clear();
+                        break;
+                    default:
+                        console.warn('Unknown action:', action);
+                }
+            } catch (error) {
+                console.error('Error handling message:', error);
+                sendToFlutter('error', { message: error.message, type: 'message' });
+            }
+        }
+
+        // Handle window resize
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                if (osmd && osmd.Sheet) {
+                    osmd.render();
+                }
+            }, 250);
+        });
+
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    </script>
+</body>
+
+</html>

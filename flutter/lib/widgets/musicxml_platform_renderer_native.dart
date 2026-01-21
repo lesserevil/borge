@@ -1,12 +1,12 @@
 /// Native platform implementation of platform-adaptive MusicXML renderer.
 ///
 /// This file is used on Android, iOS, macOS, Windows, and Linux.
-/// It uses the Verovio-based renderer.
+/// It uses the OSMD-based renderer.
 library;
 
 import 'package:flutter/material.dart';
 import 'musicxml_types.dart';
-import 'musicxml_verovio_renderer.dart';
+import 'musicxml_web_renderer.dart';
 
 /// Builds a MusicXML renderer appropriate for the current platform.
 ///
@@ -20,8 +20,8 @@ Widget buildMusicXmlRenderer({
   OnError? onError,
   OnReady? onReady,
 }) {
-  // Use the high-quality Verovio renderer for reflow on all native platforms
-  return MusicXmlVerovioRenderer(
+  // Use OSMD-based WebRenderer for high-quality rendering
+  return MusicXmlWebRenderer(
     key: key,
     musicXml: musicXml,
     musicXmlUrl: musicXmlUrl,
@@ -29,5 +29,6 @@ Widget buildMusicXmlRenderer({
     backgroundColor: backgroundColor,
     onLoaded: onLoaded,
     onError: onError,
+    onReady: onReady,
   );
 }

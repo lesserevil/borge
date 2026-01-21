@@ -71,6 +71,8 @@ dependencies:
   musicxml_score: ^0.0.1+1
   flutter_js: ^0.8.5
   webview_cef: ^0.2.2
+  web: ^1.1.0
+  xml: ^6.6.1
 
 dev_dependencies:
   flutter_test:
@@ -98,7 +100,7 @@ flutter:
   assets:
     - assets/music/
     - assets/html/
-    - assets/js/
+
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
