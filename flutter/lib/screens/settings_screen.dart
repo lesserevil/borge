@@ -3,8 +3,11 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../models/models.dart';
 import '../services/remote_control_service.dart';
+import '../services/google_drive/google_drive_service.dart';
 import '../state/app_state.dart';
+import 'google_drive_folder_picker.dart';
 
 /// Settings screen for managing app configuration and music folders.
 class SettingsScreen extends StatefulWidget {
@@ -53,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildWebOnlyMessage(context)
               else ...[
                 _buildPermissionTile(context),
+                _buildGoogleDriveSection(context),
                 _buildAddFolderTile(context),
                 ..._buildFolderTiles(context),
                 if (appState.musicFolders.isEmpty)
@@ -144,26 +148,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAddFolderTile(BuildContext context) {
     return ListTile(
       leading: const Icon(Icons.create_new_folder),
-      title: const Text('Add Music Folder'),
-      subtitle: const Text('Select a folder containing sheet music'),
+      title: const Text('Add Local Folder'),
+      subtitle: const Text('Select a folder on this device'),
       trailing: const Icon(Icons.add),
-      onTap: () => _addFolder(context),
+      onTap: () => _addLocalFolder(context),
     );
   }
 
   List<Widget> _buildFolderTiles(BuildContext context) {
     return appState.musicFolders.map((folder) {
-      // Get just the folder name for display
-      final folderName = folder.split('/').last;
+      final isLocal = folder.isLocal;
+      final isDrive = folder.isGoogleDrive;
 
       return ListTile(
-        leading: const Icon(Icons.folder),
-        title: Text(folderName),
-        subtitle: Text(
-          folder,
-          style: Theme.of(context).textTheme.bodySmall,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        leading: Icon(
+          isDrive ? Icons.cloud : Icons.folder,
+          color: isDrive ? Colors.blue : null,
+        ),
+        title: Text(folder.displayName),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isLocal)
+              Text(
+                folder.path,
+                style: Theme.of(context).textTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            if (isDrive && folder.driveMetadata != null) ...[
+              Text(
+                'Google Drive • ${folder.driveMetadata!.fileCount} files',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (folder.driveMetadata!.lastSync != null)
+                Text(
+                  'Last synced: ${_formatDateTime(folder.driveMetadata!.lastSync!)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+            ],
+          ],
         ),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline),
@@ -809,7 +835,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _addFolder(BuildContext context) async {
+  Future<void> _addLocalFolder(BuildContext context) async {
     // Check permission first
     if (!appState.hasStoragePermission) {
       final granted = await appState.requestStoragePermission();
@@ -825,24 +851,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
 
-    final path = await appState.addMusicFolder();
+    final folder = await appState.addLocalMusicFolder();
 
     if (context.mounted) {
-      if (path != null) {
+      if (folder != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added folder: ${path.split('/').last}')),
+          SnackBar(content: Text('Added folder: ${folder.displayName}')),
         );
       }
     }
   }
 
-  Future<void> _removeFolder(BuildContext context, String folder) async {
+  Future<void> _removeFolder(BuildContext context, MusicFolder folder) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove Folder?'),
         content: Text(
-          'Remove "${folder.split('/').last}" from the music library?',
+          'Remove "${folder.displayName}" from the music library?',
         ),
         actions: [
           TextButton(
@@ -865,6 +891,169 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('Folder removed')));
       }
+    }
+  }
+
+  // Google Drive methods
+  Widget _buildGoogleDriveSection(BuildContext context) {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      children: [
+        if (appState.isDriveSignedIn) ...[
+          // Signed in - show user info and add Drive folder button
+          ListTile(
+            leading: const Icon(Icons.cloud_done, color: Colors.green),
+            title: const Text('Google Drive'),
+            subtitle: Text('Signed in as ${appState.driveUserEmail ?? "Unknown"}'),
+            trailing: TextButton(
+              onPressed: () => _signOutFromDrive(context),
+              child: const Text('Sign Out'),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cloud_upload),
+            title: const Text('Add Drive Folder'),
+            subtitle: const Text('Select a folder from Google Drive'),
+            trailing: const Icon(Icons.add),
+            onTap: () => _addDriveFolder(context),
+          ),
+          if (appState.musicFolders.any((f) => f.isGoogleDrive))
+            ListTile(
+              leading: const Icon(Icons.sync),
+              title: const Text('Sync Drive Folders'),
+              subtitle: const Text('Update music from Google Drive'),
+              onTap: () => _syncDriveFolders(context),
+            ),
+        ] else ...[
+          // Not signed in - show sign in button
+          ListTile(
+            leading: const Icon(Icons.cloud_off, color: Colors.grey),
+            title: const Text('Google Drive'),
+            subtitle: const Text('Sign in to access music from Google Drive'),
+            trailing: FilledButton.icon(
+              onPressed: () => _signInToDrive(context),
+              icon: const Icon(Icons.login),
+              label: const Text('Sign In'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _signInToDrive(BuildContext context) async {
+    final success = await appState.signInToGoogleDrive();
+    
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Signed in to Google Drive'
+                : 'Failed to sign in to Google Drive',
+          ),
+         backgroundColor: success ? null : Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _signOutFromDrive(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign Out from Google Drive?'),
+        content: const Text(
+          'This will remove all Google Drive folders from your library.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await appState.signOutFromGoogleDrive();
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Signed out from Google Drive')),
+        );
+      }
+    }
+  }
+
+  Future<void> _addDriveFolder(BuildContext context) async {
+    final driveService = appState.getDriveService() as GoogleDriveService?;
+    
+    if (driveService == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google Drive not available')),
+      );
+      return;
+    }
+
+    // Show folder picker dialog
+    final result = await showDialog(
+      context: context,
+      builder: (context) => GoogleDriveFolderPickerDialog(
+        driveService: driveService,
+      ),
+    );
+
+    if (result != null && context.mounted) {
+      // result is a _BreadcrumbItem with id and name
+      final folder = await appState.addGoogleDriveFolder(
+        result.id as String,
+        result.name as String,
+      );
+
+      if (folder != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added Drive folder: ${folder.displayName}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _syncDriveFolders(BuildContext context) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Syncing Drive folders...')),
+    );
+
+    await appState.syncGoogleDriveFolders();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google Drive folders synced')),
+      );
+    }
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+
+    if (diff.inMinutes < 1) {
+      return 'Just now';
+    } else if (diff.inHours < 1) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    } else {
+      return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
     }
   }
 

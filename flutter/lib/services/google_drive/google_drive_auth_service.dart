@@ -109,14 +109,7 @@ class GoogleDriveAuthService {
     }
 
     try {
-      final authHeaders = await _currentUser!.authHeaders;
-      final accessToken = auth.AccessToken(
-        'Bearer',
-        authHeaders['Authorization']!.substring('Bearer '.length),
-        DateTime.now().add(const Duration(hours: 1)).toUtc(),
-      );
-
-      // Alternative: Use the extension method
+      // Use the extension method to get authenticated client
       return await _googleSignIn!.authenticatedClient();
     } catch (e) {
       debugPrint('Error getting authenticated client: $e');

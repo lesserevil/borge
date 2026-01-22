@@ -29,7 +29,13 @@ class AppState extends ChangeNotifier {
   }
 
   /// List of registered music folders.
-  List<String> get musicFolders => _musicLibrary.folders;
+  List<MusicFolder> get musicFolders => _musicLibrary.folders;
+
+  /// Whether user is signed in to Google Drive
+  bool get isDriveSignedIn => _musicLibrary.isDriveSignedIn;
+
+  /// Google Drive user email
+  String? get driveUserEmail => _musicLibrary.driveUserEmail;
 
   /// All available songs.
   List<Song> get songs => List.unmodifiable(_songs);
@@ -232,19 +238,62 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Add a music folder and rescan.
-  Future<String?> addMusicFolder() async {
-    final path = await _musicLibrary.pickAndAddFolder();
-    if (path != null) {
+  /// Add a local music folder and rescan.
+  Future<MusicFolder?> addLocalMusicFolder() async {
+    final folder = await _musicLibrary.pickAndAddLocalFolder();
+    if (folder != null) {
       await rescanLibrary();
     }
-    return path;
+    return folder;
+  }
+
+  /// Add a Google Drive folder and rescan.
+  Future<MusicFolder?> addGoogleDriveFolder(String folderId, String folderName) async {
+    final folder = await _musicLibrary.addGoogleDriveFolder(folderId, folderName);
+    if (folder != null) {
+      await rescanLibrary();
+    }
+    return folder;
   }
 
   /// Remove a music folder and rescan.
-  Future<void> removeMusicFolder(String path) async {
-    await _musicLibrary.removeFolder(path);
+  Future<void> removeMusicFolder(MusicFolder folder) async {
+    await _musicLibrary.removeFolder(folder);
     await rescanLibrary();
+  }
+
+  /// Sign in to Google Drive
+  Future<bool> signInToGoogleDrive() async {
+    final success = await _musicLibrary.signInToGoogleDrive();
+    if (success) {
+      notifyListeners();
+    }
+    return success;
+  }
+
+  /// Sign out from Google Drive
+  Future<void> signOutFromGoogleDrive() async {
+    await _musicLibrary.signOutFromGoogleDrive();
+    await rescanLibrary();
+    notifyListeners();
+  }
+
+  /// Sync Google Drive folders
+  Future<void> syncGoogleDriveFolders() async {
+    await _musicLibrary.syncGoogleDriveFolders();
+    await rescanLibrary();
+  }
+
+  /// Get Google Drive service for folder picker
+  dynamic getDriveService() => _musicLibrary.getDriveService();
+
+  /// Get Drive cache size
+  Future<int> getDriveCacheSize() => _musicLibrary.getDriveCacheSize();
+
+  /// Clear Drive cache
+  Future<void> clearDriveCache() async {
+    await _musicLibrary.clearDriveCache();
+    notifyListeners();
   }
 
   /// Request storage permission.

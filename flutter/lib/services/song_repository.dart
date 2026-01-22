@@ -35,6 +35,43 @@ class SongRepository {
     return _songs;
   }
 
+  /// Load a single file and create a song from it.
+  ///
+  /// Useful for Google Drive downloaded files.
+  Future<Song?> loadFromFile(String filePath) async {
+    try {
+      // Extract file name and extension
+      final fileName = filePath.split('/').last;
+      final extensionMatch = RegExp(r'\.(xml|musicxml|mxl)$', caseSensitive: false).firstMatch(fileName);
+      
+      if (extensionMatch == null) {
+        return null; // Not a music file
+      }
+
+      final extension = extensionMatch.group(0)!;
+      final dirPath = _getParentDirectory(filePath);
+      final name = fileName.replaceAll(RegExp(r'\.(xml|musicxml|mxl)$', caseSensitive: false), '');
+      
+      // Generate a stable ID from the file path
+      final id = _generateId(filePath);
+
+      return Song(
+        id: id,
+        name: name,
+        pages: [
+          Page(
+            pageNumber: 1,
+            path: filePath,
+            extension: extension,
+          ),
+        ],
+        directoryPath: dirPath,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Gets a song by ID.
   Song? getSongById(String id) {
     try {
