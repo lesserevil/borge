@@ -189,13 +189,97 @@
             }
         }
 
+
         function nextPage() {
             if (currentPage < totalPages) {
                 scrollToPage(currentPage + 1);
             }
         }
 
+        // Get first visible measure number using OSMD internal API
+        function getFirstVisibleMeasure() {
+            const pageIndex = (currentPage || 1) - 1;
+
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.musicPages) {
+                return 1;
+            }
+
+            const page = osmd.GraphicSheet.musicPages[pageIndex];
+            if (page && page.musicSystems && page.musicSystems.length > 0) {
+                const system = page.musicSystems[0];
+                if (system.graphicalMeasures && system.graphicalMeasures.length > 0) {
+                    const measure = system.graphicalMeasures[0][0];
+                    return measure.parentSourceMeasure?.measureNumber || 1;
+                }
+            }
+
+            return 1;
+        }
+
+        // Find which page contains a specific measure using OSMD internal API
+        function findPageWithMeasure(measureNumber) {
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.musicPages) {
+                return 1;
+            }
+
+            const pages = osmd.GraphicSheet.musicPages;
+
+            // Search for exact match first
+            for (let i = 0; i < pages.length; i++) {
+                const page = pages[i];
+                for (const system of page.musicSystems) {
+                    for (const measureArray of system.graphicalMeasures) {
+                        const m = measureArray[0];
+                        const measureNum = m.parentSourceMeasure?.measureNumber;
+                        if (measureNum === measureNumber) {
+                            return i + 1; // pages are 1-indexed
+                        }
+                    }
+                }
+            }
+
+            // If no exact match, find first page with measure >= target
+            for (let i = 0; i < pages.length; i++) {
+                const page = pages[i];
+                for (const system of page.musicSystems) {
+                    for (const measureArray of system.graphicalMeasures) {
+                        const m = measureArray[0];
+                        const measureNum = m.parentSourceMeasure?.measureNumber;
+                        if (measureNum >= measureNumber) {
+                            return i + 1;
+                        }
+                    }
+                }
+            }
+
+            return pages.length; // fallback to last page
+        }
+
+        // Handle window resize with debouncing
+        let resizeTimeout;
+        function handleResize() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(async () => {
+                if (!osmd || !osmd.Sheet) return;
+
+                console.log('Window resized, re-rendering...');
+
+                // Remember current position
+                const firstVisibleMeasure = getFirstVisibleMeasure();
+                console.log(`First visible measure before resize: ${firstVisibleMeasure}`);
+
+                // Re-render with new viewport dimensions
+                await loadScore();
+
+                // Navigate to page containing the original measure
+                const targetPage = findPageWithMeasure(firstVisibleMeasure);
+                console.log(`Navigating to page ${targetPage} (contains measure ${firstVisibleMeasure})`);
+                scrollToPage(targetPage);
+            }, 500); // 500ms debounce
+        }
+
         window.addEventListener('load', init);
+        window.addEventListener('resize', handleResize);
     </script>
 </body>
 
