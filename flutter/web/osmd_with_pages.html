@@ -72,6 +72,8 @@
         <button onclick="loadScore()">Load Score</button>
         <button id="prev" onclick="prevPage()" disabled>← Prev</button>
         <button id="next" onclick="nextPage()" disabled>Next →</button>
+        <button id="zoom-out" onclick="zoomOut()" disabled>🔍−</button>
+        <button id="zoom-in" onclick="zoomIn()" disabled>🔍+</button>
         <span id="info">Ready</span>
     </div>
 
@@ -83,6 +85,7 @@
         let osmd = null;
         let currentPage = 1;
         let totalPages = 1;
+        let zoomLevel = 1.0; // Default zoom level
 
         async function init() {
             try {
@@ -133,13 +136,16 @@
                     "Viewport"  // Custom name
                 );
 
+                // Apply zoom level
+                osmd.zoom = zoomLevel;
+
                 await osmd.render();
 
                 // Count pages
                 totalPages = osmd.GraphicSheet?.MusicPages?.length || 1;
                 const measureCount = osmd.Sheet?.SourceMeasures?.length || 0;
 
-                console.log(`✅ Native Pagination: ${totalPages} pages, ${measureCount} measures`);
+                console.log(`✅ Native Pagination: ${totalPages} pages, ${measureCount} measures, zoom: ${zoomLevel}x`);
                 console.log(`PageHeight: ${osmd.EngravingRules.PageHeight.toFixed(1)} (calculated from viewport)`);
 
                 document.getElementById('info').textContent =
@@ -148,6 +154,10 @@
                 if (totalPages > 1) {
                     document.getElementById('next').disabled = false;
                 }
+
+                // Enable zoom buttons
+                document.getElementById('zoom-in').disabled = false;
+                document.getElementById('zoom-out').disabled = false;
 
                 scrollToPage(1);
 
@@ -276,6 +286,46 @@
                 console.log(`Navigating to page ${targetPage} (contains measure ${firstVisibleMeasure})`);
                 scrollToPage(targetPage);
             }, 500); // 500ms debounce
+        }
+
+        // Zoom In: Increase zoom by 0.1, maintain measure position
+        async function zoomIn() {
+            if (!osmd || !osmd.Sheet) return;
+
+            // Remember current position
+            const firstVisibleMeasure = getFirstVisibleMeasure();
+            console.log(`Zooming in from ${zoomLevel}x, current measure: ${firstVisibleMeasure}`);
+
+            // Increase zoom (max 2.0x)
+            zoomLevel = Math.min(2.0, zoomLevel + 0.1);
+
+            // Re-render with new zoom
+            await loadScore();
+
+            // Navigate to page containing the original measure
+            const targetPage = findPageWithMeasure(firstVisibleMeasure);
+            console.log(`After zoom in to ${zoomLevel}x: navigating to page ${targetPage}`);
+            scrollToPage(targetPage);
+        }
+
+        // Zoom Out: Decrease zoom by 0.1, maintain measure position
+        async function zoomOut() {
+            if (!osmd || !osmd.Sheet) return;
+
+            // Remember current position
+            const firstVisibleMeasure = getFirstVisibleMeasure();
+            console.log(`Zooming out from ${zoomLevel}x, current measure: ${firstVisibleMeasure}`);
+
+            // Decrease zoom (min 0.5x)
+            zoomLevel = Math.max(0.5, zoomLevel - 0.1);
+
+            // Re-render with new zoom
+            await loadScore();
+
+            // Navigate to page containing the original measure
+            const targetPage = findPageWithMeasure(firstVisibleMeasure);
+            console.log(`After zoom out to ${zoomLevel}x: navigating to page ${targetPage}`);
+            scrollToPage(targetPage);
         }
 
         window.addEventListener('load', init);
