@@ -1,4 +1,4 @@
-package com.borge.borge
+package com.lesserevil.borge
 
 import io.flutter.embedding.android.FlutterActivity
 
