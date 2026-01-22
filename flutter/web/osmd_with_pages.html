@@ -107,12 +107,10 @@
 
                 await osmd.load(xml);
 
-                // Set explicit page size BEFORE rendering
-                if (osmd.EngravingRules) {
-                    osmd.EngravingRules.PageHeight = 800;  // Fixed height for consistent pages
-                    osmd.EngravingRules.PageWidth = 1000;  // Fixed width
-                    console.log('Set page dimensions: 1000x800');
-                }
+                // THE WORKING FIX: Create PageFormat object directly!
+                // Setting pageFormat: 'A4' as a string doesn't work
+                // We need to create a PageFormat object to prevent PageHeight reset to 100001
+                osmd.rules.PageFormat = new opensheetmusicdisplay.PageFormat(210, 297, "A4");
 
                 await osmd.render();
 
@@ -120,7 +118,9 @@
                 totalPages = osmd.GraphicSheet?.MusicPages?.length || 1;
                 const measureCount = osmd.Sheet?.SourceMeasures?.length || 0;
 
-                console.log(`Rendered ${totalPages} pages, ${measureCount} measures`);
+                console.log(`✅ Native Pagination SUCCESS: ${totalPages} pages, ${measureCount} measures`);
+                console.log(`PageHeight: ${osmd.EngravingRules.PageHeight} (was 100001 before fix)`);
+                console.log(`PageFormat: ${osmd.EngravingRules.PageFormat?.idString}`);
 
                 document.getElementById('info').textContent =
                     `Page ${currentPage} of ${totalPages} (${measureCount} measures)`;
