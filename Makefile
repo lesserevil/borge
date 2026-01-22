@@ -80,6 +80,20 @@ clean-flutter-apk:
 	@echo "🧹 Cleaning APK build artifacts..."
 	@cd $(FLUTTER_DIR) && rm -rf build/app/outputs/flutter-apk
 
+# Run Flutter on remote Android device (via VS Code port forwarding)
+.PHONY: flutter-run-remote
+flutter-run-remote:
+	@echo "📱 Running Flutter on remote Android device..."
+	@echo "Make sure:"
+	@echo "  1. Android device is connected to your local machine"
+	@echo "  2. ADB is running locally: adb start-server"
+	@echo "  3. Port 5037 is forwarded in VS Code"
+	@echo ""
+	@cd $(FLUTTER_DIR) && export ANDROID_HOME=/usr/lib/android-sdk && $(FLUTTER) devices
+	@echo ""
+	@echo "🚀 Launching app..."
+	@cd $(FLUTTER_DIR) && export ANDROID_HOME=/usr/lib/android-sdk && $(FLUTTER) run
+
 # ----------------------------------------------------------------------
 # Convenience targets
 # ------------------------------------------------------------------
@@ -146,5 +160,5 @@ package: flutter-build-apk
 
 .PHONY: pebble-build tablet-server kill-tablet-server run test-local stop-local \
 	flutter-build-native flutter-run-native flutter-run-web clean-flutter-native \
-	flutter-build-apk flutter-run-apk clean-flutter-apk \
+	flutter-build-apk flutter-run-apk flutter-run-remote clean-flutter-apk \
 	clean build test package
