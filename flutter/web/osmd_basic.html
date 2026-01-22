@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSMD Basic Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.0/build/opensheetmusicdisplay.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        #osmd-container {
+            width: 100%;
+        }
+
+        #controls {
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin-right: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <button onclick="loadScore()">Load Score</button>
+        <span id="status">Ready</span>
+    </div>
+
+    <div id="osmd-container"></div>
+
+    <script>
+        let osmd = null;
+
+        async function init() {
+            try {
+                // Create OSMD with minimal options
+                osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd-container', {
+                    autoResize: true,
+                    backend: 'svg',
+                });
+
+                console.log('OSMD initialized');
+                document.getElementById('status').textContent = 'OSMD ready - click "Load Score"';
+            } catch (error) {
+                console.error('Failed to initialize OSMD:', error);
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function loadScore() {
+            if (!osmd) {
+                alert('OSMD not initialized');
+                return;
+            }
+
+            try {
+                document.getElementById('status').textContent = 'Loading...';
+
+                // Fetch the sample MusicXML file
+                const response = await fetch('sample_score.xml');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch sample_score.xml');
+                }
+                const xml = await response.text();
+
+                console.log('Loaded XML, length:', xml.length);
+
+                // Load into OSMD
+                await osmd.load(xml);
+                console.log('OSMD loaded');
+
+                // Render
+                await osmd.render();
+                console.log('OSMD rendered');
+
+                // Get info
+                const pageCount = osmd.GraphicSheet?.MusicPages?.length || 0;
+                const measureCount = osmd.Sheet?.SourceMeasures?.length || 0;
+
+                document.getElementById('status').textContent =
+                    `Loaded! ${measureCount} measures, ${pageCount} pages`;
+
+            } catch (error) {
+                console.error('Failed to load/render:', error);
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', init);
+    </script>
+</body>
+
+</html>

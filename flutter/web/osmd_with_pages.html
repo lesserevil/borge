@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSMD with Page Size</title>
+    <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.0/build/opensheetmusicdisplay.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+        }
+
+        #controls {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        #controls button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #controls button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        #info {
+            margin-left: auto;
+        }
+
+        #scroll-container {
+            margin-top: 70px;
+            height: calc(100vh - 70px);
+            overflow-x: auto;
+            overflow-y: hidden;
+            display: flex;
+            align-items: center;
+            padding: 20px;
+        }
+
+        #osmd-container {
+            width: 1200px;
+            /* Explicit width so OSMD can calculate layout */
+            margin: 0 auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <button onclick="loadScore()">Load Score</button>
+        <button id="prev" onclick="prevPage()" disabled>← Prev</button>
+        <button id="next" onclick="nextPage()" disabled>Next →</button>
+        <span id="info">Ready</span>
+    </div>
+
+    <div id="scroll-container">
+        <div id="osmd-container"></div>
+    </div>
+
+    <script>
+        let osmd = null;
+        let currentPage = 1;
+        let totalPages = 1;
+
+        async function init() {
+            try {
+                // Create OSMD with page format options
+                osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd-container', {
+                    autoResize: false,
+                    backend: 'svg',
+                    drawTitle: true,
+                    drawComposer: true,
+                    drawSubtitle: true,
+                });
+
+                console.log('OSMD initialized');
+            } catch (error) {
+                console.error('Init error:', error);
+            }
+        }
+
+        async function loadScore() {
+            try {
+                document.getElementById('info').textContent = 'Loading...';
+
+                const response = await fetch('sample_score.xml');
+                const xml = await response.text();
+
+                await osmd.load(xml);
+
+                // Set explicit page size BEFORE rendering
+                if (osmd.EngravingRules) {
+                    osmd.EngravingRules.PageHeight = 800;  // Fixed height for consistent pages
+                    osmd.EngravingRules.PageWidth = 1000;  // Fixed width
+                    console.log('Set page dimensions: 1000x800');
+                }
+
+                await osmd.render();
+
+                // Count pages
+                totalPages = osmd.GraphicSheet?.MusicPages?.length || 1;
+                const measureCount = osmd.Sheet?.SourceMeasures?.length || 0;
+
+                console.log(`Rendered ${totalPages} pages, ${measureCount} measures`);
+
+                document.getElementById('info').textContent =
+                    `Page ${currentPage} of ${totalPages} (${measureCount} measures)`;
+
+                if (totalPages > 1) {
+                    document.getElementById('next').disabled = false;
+                }
+
+                scrollToPage(1);
+
+            } catch (error) {
+                console.error('Load error:', error);
+                document.getElementById('info').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        function scrollToPage(pageNum) {
+            const pages = document.querySelectorAll('div[id^="osmdCanvasPage"]');
+            if (pages.length === 0 || pageNum < 1 || pageNum > pages.length) return;
+
+            const targetPage = pages[pageNum - 1];
+            const container = document.getElementById('scroll-container');
+
+            container.scrollTo({
+                left: targetPage.offsetLeft - 20,
+                behavior: 'smooth'
+            });
+
+            currentPage = pageNum;
+            document.getElementById('info').textContent =
+                `Page ${currentPage} of ${totalPages}`;
+
+            document.getElementById('prev').disabled = currentPage <= 1;
+            document.getElementById('next').disabled = currentPage >= totalPages;
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                scrollToPage(currentPage - 1);
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                scrollToPage(currentPage + 1);
+            }
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+
+</html>

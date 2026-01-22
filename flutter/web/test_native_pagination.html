@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSMD Native Pagination Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #controls {
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        #controls button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        #controls button:hover {
+            background: #2980b9;
+        }
+
+        #controls button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        #controls input[type="file"] {
+            display: none;
+        }
+
+        #controls label {
+            background: #27ae60;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #controls label:hover {
+            background: #229954;
+        }
+
+        #info {
+            margin-left: auto;
+            font-size: 14px;
+        }
+
+        #zoom-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #zoom-controls input[type="range"] {
+            width: 150px;
+        }
+
+        #frame-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <label for="file-input">Load MusicXML</label>
+        <input type="file" id="file-input" accept=".xml,.musicxml,.mxl">
+
+        <button id="prev-page" disabled>← Previous</button>
+        <button id="next-page" disabled>Next →</button>
+
+        <div id="zoom-controls">
+            <span>Zoom:</span>
+            <input type="range" id="zoom-slider" min="50" max="250" value="100" step="10">
+            <span id="zoom-value">100%</span>
+        </div>
+
+        <div id="info">
+            <span id="page-info">No score loaded</span>
+        </div>
+    </div>
+
+    <div id="frame-container">
+        <iframe id="osmd-frame" src="osmd_native_pagination.html"></iframe>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+        let osmdFrame = null;
+
+        // Wait for iframe to load
+        document.getElementById('osmd-frame').addEventListener('load', () => {
+            osmdFrame = document.getElementById('osmd-frame').contentWindow;
+
+            // Auto-load the sample score after a short delay
+            setTimeout(async () => {
+                try {
+                    const response = await fetch('sample_score.xml');
+                    if (!response.ok) throw new Error('Failed to load sample_score.xml');
+                    const xml = await response.text();
+
+                    osmdFrame.postMessage(JSON.stringify({
+                        action: 'load',
+                        payload: { xml: xml }
+                    }), '*');
+
+                    console.log('Auto-loaded sample_score.xml (Clementi Sonatina)');
+                } catch (error) {
+                    console.error('Failed to auto-load sample:', error);
+                }
+            }, 500);
+        });
+
+        // Listen for messages from OSMD
+        window.addEventListener('message', (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                console.log('Received from OSMD:', message);
+
+                if (message.type === 'loaded') {
+                    totalPages = message.data.calculatedPageCount || message.data.pageCount || 1;
+                    currentPage = 1;
+                    updatePageInfo();
+                    document.getElementById('prev-page').disabled = false;
+                    document.getElementById('next-page').disabled = false;
+                }
+
+                if (message.type === 'pageChanged') {
+                    currentPage = message.data.page;
+                    totalPages = message.data.totalPages;
+                    updatePageInfo();
+                }
+            } catch (e) {
+                // Ignore non-JSON messages
+            }
+        });
+
+        // File input handler
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const xml = event.target.result;
+                osmdFrame.postMessage(JSON.stringify({
+                    action: 'load',
+                    payload: { xml: xml }
+                }), '*');
+            };
+            reader.readAsText(file);
+        });
+
+        // Navigation buttons
+        document.getElementById('prev-page').addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                osmdFrame.postMessage(JSON.stringify({
+                    action: 'setPage',
+                    payload: { page: currentPage }
+                }), '*');
+                updatePageInfo();
+            }
+        });
+
+        document.getElementById('next-page').addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                osmdFrame.postMessage(JSON.stringify({
+                    action: 'setPage',
+                    payload: { page: currentPage }
+                }), '*');
+                updatePageInfo();
+            }
+        });
+
+        // Zoom slider
+        document.getElementById('zoom-slider').addEventListener('input', (e) => {
+            const zoomPercent = e.target.value;
+            const zoomLevel = zoomPercent / 100;
+
+            document.getElementById('zoom-value').textContent = zoomPercent + '%';
+
+            osmdFrame.postMessage(JSON.stringify({
+                action: 'setZoom',
+                payload: { zoom: zoomLevel }
+            }), '*');
+        });
+
+        function updatePageInfo() {
+            document.getElementById('page-info').textContent =
+                `Page ${currentPage} of ${totalPages}`;
+
+            document.getElementById('prev-page').disabled = currentPage <= 1;
+            document.getElementById('next-page').disabled = currentPage >= totalPages;
+        }
+    </script>
+</body>
+
+</html>
