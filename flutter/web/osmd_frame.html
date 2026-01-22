@@ -122,6 +122,11 @@
         let pendingMusicXml = null;
         let frameId = null;
 
+        // Pagination state
+        let originalMusicXml = null;
+        let paginationInfo = null; // Stores {fittingSystems, totalSystems, systemsPerPage, totalPages, pageMeasureRanges}
+        let currentPageNumber = 1;
+
         // Configuration options
         const defaultOptions = {
             autoResize: true,
@@ -231,6 +236,9 @@
 
             console.log("OSMD: xmlContent summary:", xmlContent.substring(0, 100));
 
+            // Store original MusicXML for pagination
+            originalMusicXml = xmlContent;
+
             try {
                 await osmd.load(xmlContent);
 
@@ -308,7 +316,7 @@
         }
 
         // Update rendering options
-        async function setOptions(options) {
+        async function setOptions(options, skipDetection = false) {
             if (!osmd) return;
 
             const container = document.getElementById('osmd-container');
@@ -355,34 +363,45 @@
                 console.log("OSMD: Rendering score...");
                 osmd.render();
 
+                // Reset scroll to ensure we start from the top
+                if (container) {
+                    container.scrollTop = 0;
+                    console.log("OSMD: Reset scroll to top");
+                }
+
                 // Some versions of OSMD need a forced layout update for pagination
                 if (osmd.GraphicSheet && osmd.GraphicSheet.reLayout) {
                     console.log("OSMD: FORCING GraphicSheet.reLayout()");
                     osmd.GraphicSheet.reLayout();
                 }
 
-                // Allow time for DOM to populate, then retry if needed
-                let retryCount = 0;
-                const attemptReport = () => {
-                    if (retryCount < 10) {
-                        // Check if BoundingBox is ready
-                        if (osmd.GraphicSheet && osmd.GraphicSheet.MusicPages.length > 0) {
-                            const firstPage = osmd.GraphicSheet.MusicPages[0];
-                            if (firstPage.BoundingBox) {
-                                console.log("OSMD: BoundingBox ready, reporting score info");
-                                reportScoreInfoSafe();
-                                return;
+                // Only run detection/reporting if not skipped (to avoid recursion when rendering split pages)
+                if (!skipDetection) {
+                    // Allow time for DOM to populate, then retry if needed
+                    let retryCount = 0;
+                    const attemptReport = () => {
+                        if (retryCount < 10) {
+                            // Check if BoundingBox is ready
+                            if (osmd.GraphicSheet && osmd.GraphicSheet.MusicPages.length > 0) {
+                                const firstPage = osmd.GraphicSheet.MusicPages[0];
+                                if (firstPage.BoundingBox) {
+                                    console.log("OSMD: BoundingBox ready, reporting score info");
+                                    reportScoreInfoSafe();
+                                    return;
+                                }
                             }
+                            retryCount++;
+                            console.log(`OSMD: BoundingBox not ready, retry ${retryCount}/10`);
+                            setTimeout(attemptReport, 200);
+                        } else {
+                            console.log("OSMD: BoundingBox never populated, reporting anyway");
+                            reportScoreInfoSafe();
                         }
-                        retryCount++;
-                        console.log(`OSMD: BoundingBox not ready, retry ${retryCount}/10`);
-                        setTimeout(attemptReport, 200);
-                    } else {
-                        console.log("OSMD: BoundingBox never populated, reporting anyway");
-                        reportScoreInfoSafe();
-                    }
-                };
-                setTimeout(attemptReport, 300);
+                    };
+                    setTimeout(attemptReport, 300);
+                } else {
+                    console.log("OSMD: Skipping pagination detection (rendering split page)");
+                }
             }
         }
 
@@ -396,6 +415,43 @@
                 info.totalSystems = detectionResult.totalSystems;
                 info.lastFittingMeasure = detectionResult.lastFittingMeasure;
                 info.canvasOverflow = detectionResult.canvasHeight > detectionResult.maxHeight;
+
+                // Calculate pagination if systems overflow
+                if (detectionResult.fittingSystems > 0 && detectionResult.totalSystems > detectionResult.fittingSystems) {
+                    const totalPages = Math.ceil(detectionResult.totalSystems / detectionResult.fittingSystems);
+                    info.calculatedPageCount = totalPages;
+                    info.systemsPerPage = detectionResult.fittingSystems;
+
+                    // Store pagination info globally for page navigation
+                    paginationInfo = {
+                        fittingSystems: detectionResult.fittingSystems,
+                        totalSystems: detectionResult.totalSystems,
+                        systemsPerPage: detectionResult.fittingSystems,
+                        totalPages: totalPages,
+                        pageMeasureRanges: [] // Will be populated below
+                    };
+
+                    // Calculate measure ranges for all pages upfront
+                    console.log(`OSMD: Calculating measure ranges for ${totalPages} pages...`);
+                    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                        const range = calculateMeasureRangeForPage(pageNum, paginationInfo);
+                        paginationInfo.pageMeasureRanges.push(range);
+                        if (range) {
+                            console.log(`OSMD:   Page ${pageNum}: measures ${range.startMeasure}-${range.endMeasure}`);
+                        }
+                    }
+
+                    console.log(`OSMD: Pagination - ${totalPages} pages needed (${detectionResult.fittingSystems} systems per page)`);
+
+                    // Auto-navigate to page 1 after pagination detection
+                    setTimeout(() => {
+                        setPage(1).catch(err => console.error("OSMD: Failed to auto-navigate to page 1:", err));
+                    }, 100);
+
+                } else {
+                    info.calculatedPageCount = 1;
+                    info.systemsPerPage = detectionResult.totalSystems;
+                }
 
                 const canvases = document.querySelectorAll('div[id^="osmdCanvasPage"]');
                 console.log("OSMD: Discrete pages in DOM: " + canvases.length);
@@ -494,6 +550,81 @@
             return { fittingSystems: 0, totalSystems, lastFittingMeasure: -1 };
         }
 
+        // Calculate the range of measures that should be displayed for a given page
+        function calculateMeasureRangeForPage(pageNum, paginInfo) {
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages || !paginInfo) {
+                console.error("OSMD: Cannot calculate measure range - missing data");
+                return null;
+            }
+
+            const page = osmd.GraphicSheet.MusicPages[0];
+            if (!page || !page.MusicSystems) {
+                console.error("OSMD: No music systems found");
+                return null;
+            }
+
+            const allSystems = page.MusicSystems;
+            const systemsPerPage = paginInfo.systemsPerPage;
+
+            // Calculate which systems belong to this page (0-indexed)
+            const startSystemIndex = (pageNum - 1) * systemsPerPage;
+            const endSystemIndex = Math.min(startSystemIndex + systemsPerPage - 1, allSystems.length - 1);
+
+            if (startSystemIndex >= allSystems.length) {
+                console.error(`OSMD: Page ${pageNum} out of range`);
+                return null;
+            }
+
+            console.log(`OSMD: calculateMeasureRange - Page ${pageNum} uses systems ${startSystemIndex}-${endSystemIndex}`);
+
+            // Get measure numbers from systems
+            let minMeasure = Infinity;
+            let maxMeasure = -Infinity;
+
+            for (let sysIdx = startSystemIndex; sysIdx <= endSystemIndex; sysIdx++) {
+                const system = allSystems[sysIdx];
+                if (!system || !system.staffLines || system.staffLines.length === 0) {
+                    continue;
+                }
+
+                const firstStaff = system.staffLines[0];
+                if (!firstStaff || !firstStaff.measures) {
+                    continue;
+                }
+
+                for (const measure of firstStaff.measures) {
+                    if (!measure) continue;
+
+                    let measureNum;
+                    if (measure.measureNumber !== undefined) {
+                        measureNum = measure.measureNumber - 1;
+                    } else if (measure.parentSourceMeasure && measure.parentSourceMeasure.MeasureNumber !== undefined) {
+                        measureNum = measure.parentSourceMeasure.MeasureNumber - 1;
+                    }
+
+                    if (measureNum !== undefined) {
+                        minMeasure = Math.min(minMeasure, measureNum);
+                        maxMeasure = Math.max(maxMeasure, measureNum);
+                    }
+                }
+            }
+
+            // CRITICAL FIX: Force page 1 to always start at measure 0
+            if (pageNum === 1) {
+                console.log(`OSMD: Page 1 - forcing minMeasure to 0 (was ${minMeasure})`);
+                minMeasure = 0;
+            }
+
+            if (minMeasure === Infinity || maxMeasure === -Infinity) {
+                console.error("OSMD: Could not determine measure range");
+                return null;
+            }
+
+            console.log(`OSMD: calculateMeasureRange - Measures ${minMeasure}-${maxMeasure} for page ${pageNum}`);
+            return { startMeasure: minMeasure, endMeasure: maxMeasure };
+        }
+
+
         // Set zoom level (1.0 = 100%)
         function setZoom(zoomLevel) {
             if (!osmd) return;
@@ -505,21 +636,136 @@
             setOptions({});
         }
 
-        // Set current page
-        function setPage(pageNumber) {
-            console.log("OSMD: Setting page to " + pageNumber);
-            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages) return;
+        // Split MusicXML to extract only specific measures
+        function splitMusicXmlByMeasures(xmlString, startMeasure, endMeasure) {
+            try {
+                console.log(`OSMD: Splitting MusicXML to extract measures ${startMeasure}-${endMeasure}`);
 
-            const pageDiv = document.getElementById(`osmdCanvasPage${pageNumber}`);
-            if (pageDiv) {
-                const container = document.getElementById('container');
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
 
-                // If horizontal paging is active
-                if (!osmd.rules.VerticalScrolling) {
-                    container.scrollLeft = pageDiv.offsetLeft - container.offsetLeft;
-                } else {
-                    container.scrollTop = pageDiv.offsetTop - container.offsetTop;
+                // Check for parse errors
+                const parserError = xmlDoc.querySelector('parsererror');
+                if (parserError) {
+                    console.error("OSMD: XML parse error:", parserError.textContent);
+                    return null;
                 }
+
+                // Get all parts
+                const parts = xmlDoc.querySelectorAll('part');
+                console.log(`OSMD: Found ${parts.length} parts to process`);
+
+                // Keep track of initial attributes for preservation
+                let initialAttributes = null;
+
+                // Process each part
+                parts.forEach((part, partIndex) => {
+                    const measures = part.querySelectorAll('measure');
+                    console.log(`OSMD:   Part ${partIndex}: ${measures.length} total measures`);
+
+                    // Extract initial attributes from measure 0 (for later injection)
+                    if (startMeasure > 0 && measures.length > 0 && !initialAttributes) {
+                        const firstMeasure = measures[0];
+                        const attrs = firstMeasure.querySelector('attributes');
+                        if (attrs) {
+                            initialAttributes = attrs.cloneNode(true);
+                            console.log("OSMD: Preserved initial attributes from measure 0");
+                        }
+                    }
+
+                    let removedCount = 0;
+                    // Iterate backwards to safely remove elements
+                    for (let i = measures.length - 1; i >= 0; i--) {
+                        const measure = measures[i];
+                        const measureNumber = parseInt(measure.getAttribute('number')) - 1; // Convert to 0-indexed
+
+                        // Keep measures in range, remove others
+                        if (measureNumber < startMeasure || measureNumber > endMeasure) {
+                            measure.remove();
+                            removedCount++;
+                        }
+                    }
+
+                    console.log(`OSMD:   Part ${partIndex}: Removed ${removedCount} measures, keeping ${measures.length - removedCount}`);
+                });
+
+                // If we didn't start from measure 0, inject initial attributes into the first remaining measure
+                if (startMeasure > 0 && initialAttributes) {
+                    const firstPart = xmlDoc.querySelector('part');
+                    if (firstPart) {
+                        const firstRemainingMeasure = firstPart.querySelector('measure');
+                        if (firstRemainingMeasure) {
+                            // Check if measure already has attributes
+                            const existingAttrs = firstRemainingMeasure.querySelector('attributes');
+                            if (!existingAttrs) {
+                                // Insert attributes at the beginning of the measure
+                                firstRemainingMeasure.insertBefore(initialAttributes, firstRemainingMeasure.firstChild);
+                                console.log("OSMD: Injected initial attributes into first measure");
+                            }
+                        }
+                    }
+                }
+
+                // Serialize back to string
+                const serializer = new XMLSerializer();
+                const result = serializer.serializeToString(xmlDoc);
+
+                // Log a preview of the result
+                console.log(`OSMD: Split XML length: ${result.length} characters`);
+
+                return result;
+
+            } catch (error) {
+                console.error("OSMD: Error splitting MusicXML:", error);
+                return null;
+            }
+        }
+
+        // Set current page (renders only the measures for this page)
+        async function setPage(pageNumber) {
+            console.log(`OSMD: setPage called for page ${pageNumber}`);
+
+            if (!originalMusicXml) {
+                console.log("OSMD: No original MusicXML stored");
+                return;
+            }
+
+            if (!paginationInfo || !paginationInfo.pageMeasureRanges) {
+                console.log("OSMD: No pagination info or measure ranges available");
+                return;
+            }
+
+            currentPageNumber = pageNumber;
+
+            // Get the precomputed measure range for this page (0-indexed array)
+            const measureRange = paginationInfo.pageMeasureRanges[pageNumber - 1];
+            if (!measureRange) {
+                console.error(`OSMD: No measure range found for page ${pageNumber}`);
+                return;
+            }
+
+            console.log(`OSMD: Rendering page ${pageNumber} with measures ${measureRange.startMeasure}-${measureRange.endMeasure}`);
+
+            try {
+                // Split the MusicXML to include only measures for this page
+                const splitXml = splitMusicXmlByMeasures(originalMusicXml, measureRange.startMeasure, measureRange.endMeasure);
+
+                if (!splitXml) {
+                    console.error("OSMD: Failed to split MusicXML");
+                    return;
+                }
+
+                // Reload OSMD with the split document
+                await osmd.load(splitXml);
+
+                // Re-apply options (but skip re-detection to avoid infinite loop)
+                setOptions({}, true); // Pass skipDetection flag
+
+                console.log(`OSMD: Successfully rendered page ${pageNumber}`);
+
+            } catch (error) {
+                console.error(`OSMD: Error rendering page ${pageNumber}:`, error);
+                showError(`Failed to render page ${pageNumber}: ` + error.message);
             }
         }
 

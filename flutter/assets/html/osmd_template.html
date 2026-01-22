@@ -119,6 +119,11 @@
         let isReady = false;
         let pendingMusicXml = null;
 
+        // Pagination state
+        let originalMusicXml = null;
+        let paginationInfo = null; // Stores {fittingSystems, totalSystems, systemsPerPage, totalPages, pageMeasureRanges}
+        let currentPageNumber = 1;
+
         // Configuration options
         const defaultOptions = {
             autoResize: true,
@@ -204,6 +209,9 @@
                 return;
             }
 
+            // Store original MusicXML for pagination
+            originalMusicXml = xmlContent;
+
             try {
                 await osmd.load(xmlContent);
 
@@ -275,7 +283,7 @@
         }
 
         // Update rendering options
-        async function setOptions(options) {
+        async function setOptions(options, skipDetection = false) {
             if (!osmd) return;
 
             const container = document.getElementById('osmd-container');
@@ -301,82 +309,302 @@
             if (osmd.rules) {
                 osmd.rules.VerticalScrolling = false;
                 // Force discrete page breaks
-                osmd.rules.PageHeight = 2100;
+                osmd.rules.PageHeight = 300;
                 osmd.rules.PageWidth = 1480;
+                osmd.rules.CompactMode = true;
             }
 
             if (osmd.Sheet) {
                 osmd.render();
 
-                // Allow time for DOM to populate
-                setTimeout(() => {
-                    const info = getScoreInfo();
+                // Reset scroll to ensure we start from the top
+                const mainContainer = document.getElementById('container');
+                if (mainContainer) {
+                    mainContainer.scrollTop = 0;
+                }
 
-                    // Detect if first page overflows and report it
-                    const lastMeasure = detectLastFittingMeasure();
-                    info.lastFittingMeasure = lastMeasure;
+                // Some versions of OSMD need a forced layout update
+                if (osmd.GraphicSheet && osmd.GraphicSheet.reLayout) {
+                    osmd.GraphicSheet.reLayout();
+                }
 
-                    sendToFlutter('loaded', info);
-                }, 500);
+                // Only run detection/reporting if not skipped
+                if (!skipDetection) {
+                    setTimeout(() => {
+                        reportScoreInfoSafe();
+                    }, 500);
+                } else {
+                    console.log("OSMD: Skipping pagination detection (rendering split page)");
+                }
             }
         }
 
-        // Detect the last measure that fits on the first page
-        function detectLastFittingMeasure() {
-            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages.length) return -1;
+        // Safe score info reporting with pagination detection
+        function reportScoreInfoSafe() {
+            try {
+                const info = getScoreInfo();
+
+                // Detect how many systems fit
+                const detectionResult = detectFittingSystems();
+                info.fittingSystems = detectionResult.fittingSystems;
+                info.totalSystems = detectionResult.totalSystems;
+                info.lastFittingMeasure = detectionResult.lastFittingMeasure;
+                info.canvasOverflow = detectionResult.canvasHeight > detectionResult.maxHeight;
+
+                // Calculate pagination if systems overflow
+                if (detectionResult.fittingSystems > 0 && detectionResult.totalSystems > detectionResult.fittingSystems) {
+                    const totalPages = Math.ceil(detectionResult.totalSystems / detectionResult.fittingSystems);
+                    info.calculatedPageCount = totalPages;
+                    info.systemsPerPage = detectionResult.fittingSystems;
+
+                    // Store pagination info globally
+                    paginationInfo = {
+                        fittingSystems: detectionResult.fittingSystems,
+                        totalSystems: detectionResult.totalSystems,
+                        systemsPerPage: detectionResult.fittingSystems,
+                        totalPages: totalPages,
+                        pageMeasureRanges: []
+                    };
+
+                    // Calculate measure ranges for all pages
+                    console.log(`OSMD: Calculating measure ranges for ${totalPages} pages...`);
+                    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+                        const range = calculateMeasureRangeForPage(pageNum, paginationInfo);
+                        paginationInfo.pageMeasureRanges.push(range);
+                        if (range) {
+                            console.log(`OSMD:   Page ${pageNum}: measures ${range.startMeasure}-${range.endMeasure}`);
+                        }
+                    }
+
+                    console.log(`OSMD: Pagination - ${totalPages} pages needed`);
+
+                    // Auto-navigate to page 1
+                    setTimeout(() => {
+                        setPage(1).catch(err => console.error("OSMD: Failed to navigate to page 1:", err));
+                    }, 100);
+
+                } else {
+                    info.calculatedPageCount = 1;
+                    info.systemsPerPage = detectionResult.totalSystems;
+                }
+
+                console.log("OSMD Info:", info);
+                sendToFlutter('loaded', info);
+            } catch (e) {
+                console.error("OSMD: Error reporting info:", e);
+                try {
+                    sendToFlutter('loaded', getScoreInfo());
+                } catch (e2) {
+                    console.error("OSMD: Fatal error", e2);
+                }
+            }
+        }
+
+        // Detect how many music systems (lines) fit within the viewport
+        function detectFittingSystems() {
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages || !osmd.GraphicSheet.MusicPages.length) {
+                console.log("OSMD: detect - No music pages available");
+                return { fittingSystems: 0, totalSystems: 0, lastFittingMeasure: -1 };
+            }
 
             const page = osmd.GraphicSheet.MusicPages[0];
+            if (!page || !page.MusicSystems) {
+                console.log("OSMD: detect - No music systems found");
+                return { fittingSystems: 0, totalSystems: 0, lastFittingMeasure: -1 };
+            }
+
+            const totalSystems = page.MusicSystems.length;
             const container = document.getElementById('container');
             const maxHeight = container.clientHeight - 80; // Account for padding
 
-            let lastFittingMeasureIndex = -1;
+            console.log(`OSMD: detect - Total systems: ${totalSystems}, max viewport height: ${maxHeight}px`);
 
-            const osmdPageHeight = page.BoundingBox.BorderBottom;
-            const canvasPage = document.querySelector('div[id^="osmdCanvasPage1"]');
-            if (!canvasPage) return -1;
+            // Get canvas to calculate pixel conversion
+            const canvasPage = document.querySelector('div[id^="osmdCanvasPage"]');
+            if (!canvasPage) {
+                console.log("OSMD: detect - No canvas page found");
+                return { fittingSystems: totalSystems, totalSystems, lastFittingMeasure: -1 };
+            }
+
             const canvasHeight = canvasPage.clientHeight;
-            const unitsToPixels = canvasHeight / osmdPageHeight;
+            console.log(`OSMD: detect - Canvas: height=${canvasHeight}px, maxHeight=${maxHeight}px`);
 
-            for (const system of page.MusicSystems) {
-                const systemBottomUnits = system.BoundingBox.AbsolutePosition.y + system.BoundingBox.BorderBottom;
-                const systemBottomPixels = systemBottomUnits * unitsToPixels;
+            if (canvasHeight <= maxHeight) {
+                console.log("OSMD: detect - All content fits in viewport");
+                return { fittingSystems: totalSystems, totalSystems, lastFittingMeasure: -1, canvasHeight, maxHeight };
+            }
 
-                if (systemBottomPixels <= maxHeight) {
-                    for (const staff of system.Staves) {
-                        for (const measure of staff.Measures) {
-                            // Use MeasureNumber (1-based) as fallback if parentSourceMeasure is missing
-                            let idx = -1;
-                            if (measure.parentSourceMeasure) {
-                                idx = measure.parentSourceMeasure.measureListIndex;
-                            } else {
-                                idx = measure.MeasureNumber - 1;
+            // Content overflows - estimate how many systems fit
+            if (totalSystems > 0) {
+                const visibleRatio = maxHeight / canvasHeight;
+                const estimatedFittingSystems = Math.floor(totalSystems * visibleRatio);
+
+                console.log(`OSMD: detect - Estimated ${estimatedFittingSystems}/${totalSystems} systems fit`);
+
+                // Get last measure from last fitting system
+                let lastFittingMeasure = -1;
+                if (page.MusicSystems && estimatedFittingSystems > 0 && estimatedFittingSystems <= totalSystems) {
+                    const lastSystem = page.MusicSystems[estimatedFittingSystems - 1];
+                    if (lastSystem && lastSystem.staffLines && lastSystem.staffLines.length > 0) {
+                        const firstStaff = lastSystem.staffLines[0];
+                        if (firstStaff && firstStaff.measures && firstStaff.measures.length > 0) {
+                            const lastMeasureInSystem = firstStaff.measures[firstStaff.measures.length - 1];
+                            if (lastMeasureInSystem) {
+                                lastFittingMeasure = lastMeasureInSystem.measureNumber - 1;
                             }
-                            lastFittingMeasureIndex = Math.max(lastFittingMeasureIndex, idx);
                         }
                     }
-                } else {
-                    break;
                 }
+
+                console.log(`OSMD: detect - Last fitting measure: ${lastFittingMeasure}`);
+
+                return {
+                    fittingSystems: estimatedFittingSystems,
+                    totalSystems,
+                    lastFittingMeasure,
+                    canvasHeight,
+                    maxHeight,
+                    visibleRatio
+                };
             }
 
-            // If we found nothing fitting, but there IS a system, maybe the first system is just huge?
-            // In that case, we should at least show the first system (measure index 0 to ?)
-            // But if lastFittingMeasureIndex is still -1, let's at least return the first measure of the system - 1 (so 0).
-            // Actually, if nothing fits, the first page will be clipped, but we should still allow navigation.
-            if (lastFittingMeasureIndex === -1 && page.MusicSystems.length > 0) {
-                // Force at least one measure (or the first system's measures) to be "fitting" so we don't get stuck?
-                // No, if it returns -1, Dart logic might fail.
-                // Let's return the last measure of the first system, assuming the user can scroll a bit or it's just tight.
-                const firstSystem = page.MusicSystems[0];
-                for (const staff of firstSystem.Staves) {
-                    for (const measure of staff.Measures) {
-                        let idx = measure.MeasureNumber - 1;
-                        lastFittingMeasureIndex = Math.max(lastFittingMeasureIndex, idx);
+            return { fittingSystems: 0, totalSystems, lastFittingMeasure: -1, canvasHeight, maxHeight };
+        }
+
+
+        // Calculate the range of measures for a given page (with Page 1 fix)
+        function calculateMeasureRangeForPage(pageNum, paginInfo) {
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages || !paginInfo) {
+                console.error("OSMD: Cannot calculate measure range - missing data");
+                return null;
+            }
+
+            const page = osmd.GraphicSheet.MusicPages[0];
+            if (!page || !page.MusicSystems) {
+                console.error("OSMD: No music systems found");
+                return null;
+            }
+
+            const allSystems = page.MusicSystems;
+            const systemsPerPage = paginInfo.systemsPerPage;
+
+            const startSystemIndex = (pageNum - 1) * systemsPerPage;
+            const endSystemIndex = Math.min(startSystemIndex + systemsPerPage - 1, allSystems.length - 1);
+
+            if (startSystemIndex >= allSystems.length) {
+                console.error(`OSMD: Page ${pageNum} out of range`);
+                return null;
+            }
+
+            console.log(`OSMD: calculateMeasureRange - Page ${pageNum} uses systems ${startSystemIndex}-${endSystemIndex}`);
+
+            let minMeasure = Infinity;
+            let maxMeasure = -Infinity;
+
+            for (let sysIdx = startSystemIndex; sysIdx <= endSystemIndex; sysIdx++) {
+                const system = allSystems[sysIdx];
+                if (!system || !system.staffLines || system.staffLines.length === 0) {
+                    continue;
+                }
+
+                const firstStaff = system.staffLines[0];
+                if (!firstStaff || !firstStaff.measures) {
+                    continue;
+                }
+
+                for (const measure of firstStaff.measures) {
+                    if (!measure) continue;
+
+                    let measureNum;
+                    if (measure.measureNumber !== undefined) {
+                        measureNum = measure.measureNumber - 1;
+                    } else if (measure.parentSourceMeasure && measure.parentSourceMeasure.MeasureNumber !== undefined) {
+                        measureNum = measure.parentSourceMeasure.MeasureNumber - 1;
+                    }
+
+                    if (measureNum !== undefined) {
+                        minMeasure = Math.min(minMeasure, measureNum);
+                        maxMeasure = Math.max(maxMeasure, measureNum);
                     }
                 }
             }
 
-            return lastFittingMeasureIndex;
+            // CRITICAL FIX: Force page 1 to always start at measure 0
+            if (pageNum === 1) {
+                console.log(`OSMD: Page 1 - forcing minMeasure to 0 (was ${minMeasure})`);
+                minMeasure = 0;
+            }
+
+            if (minMeasure === Infinity || maxMeasure === -Infinity) {
+                console.error("OSMD: Could not determine measure range");
+                return null;
+            }
+
+            console.log(`OSMD: calculateMeasureRange - Measures ${minMeasure}-${maxMeasure} for page ${pageNum}`);
+            return { startMeasure: minMeasure, endMeasure: maxMeasure };
+        }
+
+        // Split MusicXML to extract only specific measures
+        function splitMusicXmlByMeasures(xmlString, startMeasure, endMeasure) {
+            try {
+                console.log(`OSMD: Splitting MusicXML to extract measures ${startMeasure}-${endMeasure}`);
+
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
+
+                const parserError = xmlDoc.querySelector('parsererror');
+                if (parserError) {
+                    console.error("OSMD: XML parse error:", parserError.textContent);
+                    return null;
+                }
+
+                const parts = xmlDoc.querySelectorAll('part');
+                let initialAttributes = null;
+
+                parts.forEach((part, partIndex) => {
+                    const measures = part.querySelectorAll('measure');
+
+                    // Preserve initial attributes from measure 0
+                    if (startMeasure > 0 && measures.length > 0 && !initialAttributes) {
+                        const firstMeasure = measures[0];
+                        const attrs = firstMeasure.querySelector('attributes');
+                        if (attrs) {
+                            initialAttributes = attrs.cloneNode(true);
+                        }
+                    }
+
+                    // Remove measures outside the range
+                    for (let i = measures.length - 1; i >= 0; i--) {
+                        const measure = measures[i];
+                        const measureNumber = parseInt(measure.getAttribute('number')) - 1;
+
+                        if (measureNumber < startMeasure || measureNumber > endMeasure) {
+                            measure.remove();
+                        }
+                    }
+                });
+
+                // Inject initial attributes if  starting after measure 0
+                if (startMeasure > 0 && initialAttributes) {
+                    const firstPart = xmlDoc.querySelector('part');
+                    if (firstPart) {
+                        const firstRemainingMeasure = firstPart.querySelector('measure');
+                        if (firstRemainingMeasure) {
+                            const existingAttrs = firstRemainingMeasure.querySelector('attributes');
+                            if (!existingAttrs) {
+                                firstRemainingMeasure.insertBefore(initialAttributes, firstRemainingMeasure.firstChild);
+                            }
+                        }
+                    }
+                }
+
+                const serializer = new XMLSerializer();
+                return serializer.serializeToString(xmlDoc);
+
+            } catch (error) {
+                console.error("OSMD: Error splitting MusicXML:", error);
+                return null;
+            }
         }
 
         // Set zoom level (1.0 = 100%)
@@ -386,18 +614,51 @@
             setOptions({});
         }
 
-        // Set page number
-        function setPage(pageNumber) {
-            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.MusicPages) return;
+        // Set current page (renders only the measures for this page)
+        async function setPage(pageNumber) {
+            console.log(`OSMD: setPage called for page ${pageNumber}`);
 
-            const pageDiv = document.getElementById(`osmdCanvasPage${pageNumber}`);
-            if (pageDiv) {
-                const container = document.getElementById('container');
-                if (!osmd.rules.VerticalScrolling) {
-                    container.scrollLeft = pageDiv.offsetLeft - container.offsetLeft;
-                } else {
-                    container.scrollTop = pageDiv.offsetTop - container.offsetTop;
+            if (!originalMusicXml) {
+                console.log("OSMD: No original MusicXML stored");
+                return;
+            }
+
+            if (!paginationInfo || !paginationInfo.pageMeasureRanges) {
+                console.log("OSMD: No pagination info or measure ranges available");
+                return;
+            }
+
+            currentPageNumber = pageNumber;
+
+            // Get the precomputed measure range for this page
+            const measureRange = paginationInfo.pageMeasureRanges[pageNumber - 1];
+            if (!measureRange) {
+                console.error(`OSMD: No measure range found for page ${pageNumber}`);
+                return;
+            }
+
+            console.log(`OSMD: Rendering page ${pageNumber} with measures ${measureRange.startMeasure}-${measureRange.endMeasure}`);
+
+            try {
+                // Split the MusicXML to include only measures for this page
+                const splitXml = splitMusicXmlByMeasures(originalMusicXml, measureRange.startMeasure, measureRange.endMeasure);
+
+                if (!splitXml) {
+                    console.error("OSMD: Failed to split MusicXML");
+                    return;
                 }
+
+                // Reload OSMD with the split document
+                await osmd.load(splitXml);
+
+                // Re-apply options (but skip re-detection to avoid infinite loop)
+                setOptions({}, true);
+
+                console.log(`OSMD: Successfully rendered page ${pageNumber}`);
+
+            } catch (error) {
+                console.error(`OSMD: Error rendering page ${pageNumber}:`, error);
+                showError(`Failed to render page ${pageNumber}: ` + error.message);
             }
         }
 
