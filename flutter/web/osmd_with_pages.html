@@ -49,9 +49,12 @@
         #scroll-container {
             margin-top: 70px;
             height: calc(100vh - 70px);
-            overflow-x: auto;
-            overflow-y: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
+            /* Changed from hidden to auto for vertical scrolling */
             display: flex;
+            flex-direction: column;
+            /* Changed from row to column for vertical layout */
             align-items: center;
             padding: 20px;
         }
@@ -107,10 +110,28 @@
 
                 await osmd.load(xml);
 
-                // THE WORKING FIX: Create PageFormat object directly!
-                // Setting pageFormat: 'A4' as a string doesn't work
-                // We need to create a PageFormat object to prevent PageHeight reset to 100001
-                osmd.rules.PageFormat = new opensheetmusicdisplay.PageFormat(210, 297, "A4");
+                // DYNAMIC VIEWPORT-BASED PAGE FORMAT
+                // Calculate page size from viewport/container dimensions
+                const container = document.getElementById('scroll-container');
+                const containerWidth = container.clientWidth - 40; // Account for padding
+                const containerHeight = container.clientHeight - 40;
+
+                // Convert pixels to millimeters for PageFormat
+                // Standard: 96 DPI, 1 inch = 25.4mm
+                const pixelsToMm = (pixels) => pixels * 25.4 / 96;
+
+                const pageWidthMm = pixelsToMm(containerWidth);
+                const pageHeightMm = pixelsToMm(containerHeight);
+
+                console.log(`Viewport: ${containerWidth}x${containerHeight}px`);
+                console.log(`PageFormat: ${pageWidthMm.toFixed(1)}x${pageHeightMm.toFixed(1)}mm`);
+
+                // Create custom PageFormat matching viewport
+                osmd.rules.PageFormat = new opensheetmusicdisplay.PageFormat(
+                    pageWidthMm,
+                    pageHeightMm,
+                    "Viewport"  // Custom name
+                );
 
                 await osmd.render();
 
@@ -118,9 +139,8 @@
                 totalPages = osmd.GraphicSheet?.MusicPages?.length || 1;
                 const measureCount = osmd.Sheet?.SourceMeasures?.length || 0;
 
-                console.log(`✅ Native Pagination SUCCESS: ${totalPages} pages, ${measureCount} measures`);
-                console.log(`PageHeight: ${osmd.EngravingRules.PageHeight} (was 100001 before fix)`);
-                console.log(`PageFormat: ${osmd.EngravingRules.PageFormat?.idString}`);
+                console.log(`✅ Native Pagination: ${totalPages} pages, ${measureCount} measures`);
+                console.log(`PageHeight: ${osmd.EngravingRules.PageHeight.toFixed(1)} (calculated from viewport)`);
 
                 document.getElementById('info').textContent =
                     `Page ${currentPage} of ${totalPages} (${measureCount} measures)`;
@@ -144,8 +164,14 @@
             const targetPage = pages[pageNum - 1];
             const container = document.getElementById('scroll-container');
 
+            // OSMD stacks pages VERTICALLY, not horizontally
+            // Calculate vertical scroll position relative to container
+            const containerRect = container.getBoundingClientRect();
+            const pageRect = targetPage.getBoundingClientRect();
+            const scrollTop = pageRect.top - containerRect.top + container.scrollTop;
+
             container.scrollTo({
-                left: targetPage.offsetLeft - 20,
+                top: scrollTop,
                 behavior: 'smooth'
             });
 
