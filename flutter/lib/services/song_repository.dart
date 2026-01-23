@@ -41,7 +41,7 @@ class SongRepository {
   Future<Song?> loadFromFile(String filePath) async {
     try {
       // Extract file name and extension
-      final fileName = filePath.split('/').last;
+      var fileName = filePath.split('/').last;
       final extensionMatch = RegExp(r'\.(xml|musicxml|mxl)$', caseSensitive: false).firstMatch(fileName);
       
       if (extensionMatch == null) {
@@ -50,6 +50,18 @@ class SongRepository {
 
       final extension = extensionMatch.group(0)!;
       final dirPath = _getParentDirectory(filePath);
+      
+      // Strip Google Drive file ID prefix ONLY if this is a cached Drive file
+      // Format: <fileId>-<originalFileName>
+      // Only apply this to files in google_drive_cache directory
+      if (filePath.contains('google_drive_cache')) {
+        final driveIdPattern = RegExp(r'^[a-zA-Z0-9_-]+-(.+)$');
+        final driveIdMatch = driveIdPattern.firstMatch(fileName);
+        if (driveIdMatch != null) {
+          fileName = driveIdMatch.group(1)!; // Use the original filename without the ID prefix
+        }
+      }
+      
       final name = fileName.replaceAll(RegExp(r'\.(xml|musicxml|mxl)$', caseSensitive: false), '');
       
       // Generate a stable ID from the file path
@@ -111,8 +123,13 @@ class SongRepository {
       // Generate a stable ID from the directory path
       final id = _generateId(dirPath);
 
-      // Use the directory name as the song name
-      final name = _getDirectoryName(dirPath);
+
+      // Use the filename (without extension) as the song name if there's only one file
+      // Otherwise use the directory name for multi-file songs
+      final name = dirFiles.length == 1
+          ? dirFiles[0].name
+          : _getDirectoryName(dirPath);
+
 
       // Create pages from files
       final pages = <Page>[];

@@ -48,18 +48,25 @@ class MusicLibraryService {
 
   /// Initialize the service and load saved folders.
   Future<void> initialize() async {
+    debugPrint('MusicLibraryService: Initializing...');
     await _loadSavedFolders();
     await _checkPermission();
     
     // Initialize Google Drive auth
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      debugPrint('MusicLibraryService: Initializing Google Drive auth...');
       await _driveAuthService.initialize();
       
       if (_driveAuthService.isSignedIn) {
+        debugPrint('MusicLibraryService: User is signed in, initializing Drive service...');
         _driveService = GoogleDriveService(authService: _driveAuthService);
-        await _driveService!.initialize();
+        final success = await _driveService!.initialize();
+        debugPrint('MusicLibraryService: Drive service initialization ${success ? "succeeded" : "failed"}');
+      } else {
+        debugPrint('MusicLibraryService: User not signed in to Google Drive');
       }
     }
+    debugPrint('MusicLibraryService: Initialization complete');
   }
 
   /// Load saved folders from shared preferences.
@@ -385,7 +392,27 @@ class MusicLibraryService {
   }
 
   /// Get Drive service (for external use like folder picker)
-  GoogleDriveService? getDriveService() => _driveService;
+  Future<GoogleDriveService?> getDriveService() async {
+    debugPrint('getDriveService called: _driveService=${_driveService != null}, isSignedIn=${_driveAuthService.isSignedIn}');
+    
+    // If service exists, return it
+    if (_driveService != null) {
+      debugPrint('Returning existing Drive service');
+      return _driveService;
+    }
+    
+    // If user is signed in but service not initialized, initialize it now
+    if (_driveAuthService.isSignedIn) {
+      debugPrint('User is signed in but service not initialized, initializing now...');
+      _driveService = GoogleDriveService(authService: _driveAuthService);
+      final success = await _driveService!.initialize();
+      debugPrint('Drive service initialization ${success ? "succeeded" : "failed"}');
+      return success ? _driveService : null;
+    }
+    
+    debugPrint('User not signed in, cannot return Drive service');
+    return null;
+  }
 
   /// Get suggested music folder paths for the current platform.
   List<String> getSuggestedFolders() {

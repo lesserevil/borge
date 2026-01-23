@@ -994,12 +994,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _addDriveFolder(BuildContext context) async {
-    final driveService = appState.getDriveService() as GoogleDriveService?;
+    final driveService = await appState.getDriveService() as GoogleDriveService?;
     
     if (driveService == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google Drive not available')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Google Drive not available')),
+        );
+      }
       return;
     }
 

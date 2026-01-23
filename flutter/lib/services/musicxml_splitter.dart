@@ -37,8 +37,17 @@ class MusicXmlSplitter {
         }
       }
     }
-
-    return newRoot.toXmlString(pretty: true);
+    
+    // Create a new document with the modified root and preserve the XML declaration
+    final newDocument = XmlDocument([
+      XmlDeclaration([
+        XmlAttribute(XmlName('version'), '1.0'),
+        XmlAttribute(XmlName('encoding'), 'UTF-8'),
+      ]),
+      newRoot,
+    ]);
+    
+    return newDocument.toXmlString(pretty: true);
   }
 
   /// Extracts the measure count from the MusicXML document.

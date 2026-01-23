@@ -123,16 +123,6 @@ class AppState extends ChangeNotifier {
     final song = _currentSong;
     if (song == null || song.pages.isEmpty) return;
     
-    // Only expand if it's currently a single-file song or if we're updating 
-    // an already expanded multi-page song from the same source.
-    // If the internal page count matches our current pages length, skip.
-    if (song.pages.length == internalPageCount) {
-      // Check if at least one page has an internalPageNumber (meaning it's already expanded)
-      if (song.pages.any((p) => p.internalPageNumber != null)) {
-        return;
-      }
-    }
-
     // We only support expanding songs that consist of a single source file.
     // If the song has different paths for different pages, it's a true multi-file song.
     final firstPath = song.pages.first.path;
@@ -167,7 +157,9 @@ class AppState extends ChangeNotifier {
     }
     
     debugPrint('Expanded ${song.name} to $internalPageCount pages.');
-    notifyListeners();
+    
+    // Defer notifyListeners with delay to ensure all OSMD operations complete
+    Future.delayed(const Duration(milliseconds: 200), () => notifyListeners());
   }
 
   /// Initialize the app state.
@@ -285,7 +277,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Get Google Drive service for folder picker
-  dynamic getDriveService() => _musicLibrary.getDriveService();
+  Future<dynamic> getDriveService() => _musicLibrary.getDriveService();
 
   /// Get Drive cache size
   Future<int> getDriveCacheSize() => _musicLibrary.getDriveCacheSize();

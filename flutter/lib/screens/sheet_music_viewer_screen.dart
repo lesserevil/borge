@@ -355,19 +355,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(128),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
+      color: Colors.white,
       child: _buildContent(),
     );
   }
@@ -426,6 +414,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       backgroundColor: Colors.white,
       options: MusicXmlRenderOptions(
         initialPage: widget.page.internalPageNumber,
+        currentPage: widget.page.internalPageNumber,
         zoom: widget.appState.zoom,
       ),
       onLoaded: (info) {
@@ -433,8 +422,8 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
         debugPrint('Parts: ${info.partCount}, Measures: ${info.measureCount}, Pages: ${info.pageCount}');
         
         // Notify AppState to expand document if multiple pages exist
-        if (info.pageCount > 1 && widget.page.internalPageNumber == null) {
-          // We found multiple pages in a single file, expand it in AppState
+        if (info.pageCount > 1) {
+          // Update page count (may have changed due to zoom)
           Future.microtask(() {
             widget.appState.expandDocument(info.pageCount);
           });

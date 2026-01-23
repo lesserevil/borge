@@ -69,8 +69,10 @@ class GoogleDriveService {
 
   /// List folders in the given parent folder (or root if parentId is null)
   Future<List<DriveItem>> listFolders({String? parentId}) async {
+    debugPrint('=== listFolders called with parentId: $parentId ===');
+    
     if (_driveApi == null) {
-      debugPrint('Drive API not initialized');
+      debugPrint('ERROR: Drive API not initialized');
       return [];
     }
 
@@ -79,6 +81,8 @@ class GoogleDriveService {
           ? "'$parentId' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
           : "mimeType='application/vnd.google-apps.folder' and trashed=false and 'root' in parents";
 
+      debugPrint('Drive query: $query');
+
       final fileList = await _driveApi!.files.list(
         q: query,
         spaces: 'drive',
@@ -86,15 +90,26 @@ class GoogleDriveService {
         orderBy: 'name',
       );
 
-      return fileList.files?.map((f) => DriveItem.fromDriveFile(f)).toList() ??
-          [];
-    } catch (e) {
-      debugPrint('Error listing Drive folders: $e');
+      debugPrint('Drive API response received');
+      debugPrint('Number of files: ${fileList.files?.length ?? 0}');
+      
+      if (fileList.files != null) {
+        for (var file in fileList.files!) {
+          debugPrint('  - ${file.name} (${file.id})');
+        }
+      }
+
+      final items = fileList.files?.map((f) => DriveItem.fromDriveFile(f)).toList() ?? [];
+      debugPrint('Returning ${items.length} folders');
+      return items;
+    } catch (e, stackTrace) {
+      debugPrint('ERROR listing Drive folders: $e');
+      debugPrint('Stack trace: $stackTrace');
       return [];
     }
   }
 
-  /// List MusicXML files in a folder
+  /// List MusicXML files in a folder (non-recursive)
   Future<List<DriveItem>> listMusicXmlFiles(String folderId) async {
     if (_driveApi == null) {
       debugPrint('Drive API not initialized');
@@ -128,6 +143,44 @@ class GoogleDriveService {
       debugPrint('Error listing MusicXML files: $e');
       return [];
     }
+  }
+
+  /// List MusicXML files in a folder and all its subfolders recursively
+  Future<List<DriveItem>> listMusicXmlFilesRecursive(String folderId, {String folderPath = ''}) async {
+    if (_driveApi == null) {
+      debugPrint('Drive API not initialized');
+      return [];
+    }
+
+    final allFiles = <DriveItem>[];
+
+    try {
+      // Get files in current folder
+      final files = await listMusicXmlFiles(folderId);
+      
+      // Add folder path to each file's metadata for display purposes
+      for (final file in files) {
+        allFiles.add(file);
+      }
+      
+      debugPrint('Found ${files.length} music files in folder $folderPath');
+
+      // Get subfolders
+      final subfolders = await listFolders(parentId: folderId);
+      debugPrint('Found ${subfolders.length} subfolders in $folderPath');
+
+      // Recursively scan each subfolder
+      for (final subfolder in subfolders) {
+        final subPath = folderPath.isEmpty ? subfolder.name : '$folderPath/${subfolder.name}';
+        debugPrint('Recursively scanning subfolder: $subPath');
+        final subFiles = await listMusicXmlFilesRecursive(subfolder.id, folderPath: subPath);
+        allFiles.addAll(subFiles);
+      }
+    } catch (e) {
+      debugPrint('Error in recursive file listing: $e');
+    }
+
+    return allFiles;
   }
 
   /// Get folder information by ID
@@ -184,10 +237,10 @@ class GoogleDriveService {
     }
   }
 
-  /// Download all MusicXML files from a folder
+  /// Download all MusicXML files from a folder (recursively scans subfolders)
   /// Returns a map of file ID to local path
   Future<Map<String, String>> downloadFolderContents(String folderId) async {
-    final files = await listMusicXmlFiles(folderId);
+    final files = await listMusicXmlFilesRecursive(folderId);
     final downloads = <String, String>{};
 
     for (final file in files) {
@@ -197,7 +250,7 @@ class GoogleDriveService {
       }
     }
 
-    debugPrint('Downloaded ${downloads.length} files from folder $folderId');
+    debugPrint('Downloaded ${downloads.length} files from folder $folderId (including subfolders)');
     return downloads;
   }
 

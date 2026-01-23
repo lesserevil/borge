@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MusicXML Renderer - Native Pagination</title>
-    <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.0/build/opensheetmusicdisplay.min.js"></script>
+    <script src="opensheetmusicdisplay.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -113,6 +113,7 @@
         }
 
         async function loadMusicXml(xmlContent) {
+            console.log('=== JS: loadMusicXml called, xmlContent type:', typeof xmlContent, 'length:', xmlContent?.length || xmlContent?.xml?.length || 'unknown');
             if (!isReady) return;
 
             showLoading();
@@ -256,8 +257,9 @@
             return pages.length;
         }
 
+
         async function setZoom(zoom) {
-            if (!osmd || !osmd.Sheet) return;
+            if (!osmd || !osmd.Sheet || !osmd.Sheet.sourceData) return;
 
             const firstVisibleMeasure = getFirstVisibleMeasure();
             zoomLevel = Math.max(0.5, Math.min(2.0, zoom));
@@ -337,7 +339,7 @@
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(async () => {
-                if (!osmd || !osmd.Sheet) return;
+                if (!osmd || !osmd.Sheet || !osmd.Sheet.sourceData) return;
 
                 const firstVisibleMeasure = getFirstVisibleMeasure();
                 await loadMusicXml(osmd.Sheet.sourceData);
