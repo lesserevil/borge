@@ -23,6 +23,7 @@ class SheetMusicViewerScreen extends StatefulWidget {
 
 class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
   final FocusNode _focusNode = FocusNode();
+  Orientation? _lastOrientation;
 
   @override
   void initState() {
@@ -30,6 +31,27 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
     // Request focus for keyboard navigation
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Track orientation changes
+    final currentOrientation = MediaQuery.of(context).orientation;
+    if (_lastOrientation != null && _lastOrientation != currentOrientation) {
+      // Orientation changed - trigger re-render
+      debugPrint('🔄 Orientation changed from $_lastOrientation to $currentOrientation');
+      _handleOrientationChange();
+    }
+    _lastOrientation = currentOrientation;
+  }
+
+  void _handleOrientationChange() {
+    // Trigger a re-render by setting a flag that the widget can respond to
+    // The MusicXmlWebRenderer will pick this up through didUpdateWidget
+    setState(() {
+      // Force a rebuild which will cause the WebView to resize
     });
   }
 
@@ -355,19 +377,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(128),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
+      color: Colors.white,
       child: _buildContent(),
     );
   }
@@ -418,14 +428,18 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       return _buildPlaceholder(error: 'MusicXML content not loaded');
     }
 
+    // Get current orientation to force re-render on rotation
+    final orientation = MediaQuery.of(context).orientation;
+
     // Use platform-adaptive MusicXML renderer for high-quality notation
     // Automatically selects WebView (native) or iframe (web) implementation
     return buildMusicXmlRenderer(
-      key: ValueKey('musicxml-${widget.page.path}'),
+      key: ValueKey('musicxml-${widget.page.path}-$orientation'),
       musicXml: _musicXmlContent!,
       backgroundColor: Colors.white,
       options: MusicXmlRenderOptions(
         initialPage: widget.page.internalPageNumber,
+        currentPage: widget.page.internalPageNumber,
         zoom: widget.appState.zoom,
       ),
       onLoaded: (info) {
@@ -433,8 +447,8 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
         debugPrint('Parts: ${info.partCount}, Measures: ${info.measureCount}, Pages: ${info.pageCount}');
         
         // Notify AppState to expand document if multiple pages exist
-        if (info.pageCount > 1 && widget.page.internalPageNumber == null) {
-          // We found multiple pages in a single file, expand it in AppState
+        if (info.pageCount > 1) {
+          // Update page count (may have changed due to zoom)
           Future.microtask(() {
             widget.appState.expandDocument(info.pageCount);
           });

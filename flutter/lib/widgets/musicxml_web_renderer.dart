@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -69,13 +70,8 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   String? _error;
   String? _htmlContent;
 
-  // Splitting and Caching state
-  String? _fullMusicXml;
-  final Map<int, String> _pageXmlCache = {};
-  final Map<int, int> _pageStartMeasure = {0: 0};
-  int _currentPageIndex = 0;
-  int _totalMeasureCount = 0;
-  bool _isSplitting = false;
+  // Completer to track when load is truly complete
+  Completer<void>? _loadCompleter;
 
   @override
   void initState() {
@@ -86,32 +82,57 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   @override
   void didUpdateWidget(MusicXmlWebRenderer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    
+    debugPrint('=== TRACE: didUpdateWidget called');
 
-    // Reload if content changed
+    // Reload if content changed - wait for it to complete
     if (oldWidget.musicXml != widget.musicXml ||
         oldWidget.musicXmlUrl != widget.musicXmlUrl) {
-      _loadContent();
+      debugPrint('=== TRACE: Content changed, loading...');
+      _loadContent().then((_) {
+        debugPrint('=== TRACE: Load completed in didUpdateWidget');
+        // Content loaded, now safe to handle other updates
+      });
+      return; // Don't process other changes while loading
     }
 
     // Update zoom if changed
     if (oldWidget.options.zoom != widget.options.zoom) {
+      debugPrint('=== TRACE: Zoom changed to ${widget.options.zoom}');
       setZoom(widget.options.zoom);
     }
 
     if (oldWidget.options.currentPage != widget.options.currentPage &&
         widget.options.currentPage != null) {
-      setPage(widget.options.currentPage!);
+      debugPrint('=== TRACE: currentPage changed from ${oldWidget.options.currentPage} to ${widget.options.currentPage}');
+      // Don't trigger setPage if this is the initial expansion (null -> 1)
+      if (oldWidget.options.currentPage != null || widget.options.currentPage != 1) {
+        debugPrint('=== TRACE: Calling setPage(${widget.options.currentPage})');
+        setPage(widget.options.currentPage!);
+      } else {
+        debugPrint('=== TRACE: Skipping setPage (initial expansion)');
+      }
     }
   }
 
   Future<void> _loadHtmlTemplate() async {
     try {
-      // Load the HTML template from assets
+      // Load the HTML template and OSMD library from assets
       final html = await rootBundle.loadString(
         'assets/html/osmd_template.html',
       );
+      final osmdJs = await rootBundle.loadString(
+        'assets/js/opensheetmusicdisplay.min.js',
+      );
+      
+      // Replace the script tag with inline JavaScript
+      final htmlWithEmbeddedJs = html.replaceFirst(
+        '<script src="opensheetmusicdisplay.min.js"></script>',
+        '<script>$osmdJs</script>',
+      );
+      
       setState(() {
-        _htmlContent = html;
+        _htmlContent = htmlWithEmbeddedJs;
       });
       _initWebView();
     } catch (e, stackTrace) {
@@ -151,7 +172,7 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
             },
           ),
         )
-        ..loadHtmlString(_htmlContent!, baseUrl: 'https://localhost');
+        ..loadHtmlString(_htmlContent!);
 
       setState(() {
         _controller = controller;
@@ -198,6 +219,12 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
             _error = errorMsg;
             _isLoading = false;
           });
+          
+          // Complete the load operation with error
+          if (_loadCompleter != null && !_loadCompleter!.isCompleted) {
+            _loadCompleter!.completeError(errorMsg);
+          }
+          
           widget.onError?.call(errorMsg, errorType);
           break;
       }
@@ -210,12 +237,28 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     if (_controller == null) return;
 
     final message = jsonEncode({'action': action, 'payload': payload});
+    
+    // Debug: Check if we're sending XML
+    if (action == 'load' && payload is Map && payload['xml'] != null) {
+      final xml = payload['xml'] as String;
+      debugPrint('Sending XML to JS (first 100 chars): ${xml.substring(0, xml.length > 100 ? 100 : xml.length)}');
+    }
+    
+    // Escape for JavaScript string literal
+    final escapedMessage = message
+        .replaceAll('\\', '\\\\')
+        .replaceAll("'", "\\'")
+        .replaceAll('\n', '\\n')
+        .replaceAll('\r', '\\r');
 
-    _controller!.runJavaScript('handleFlutterMessage($message)');
+    _controller!.runJavaScript("handleFlutterMessage('$escapedMessage')");
   }
 
-  void _loadContent() {
+  Future<void> _loadContent() async {
     if (!_isReady) return;
+
+    // Create a new completer for this load operation
+    _loadCompleter = Completer<void>();
 
     setState(() {
       _isLoading = true;
@@ -223,112 +266,40 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     });
 
     if (widget.musicXml != null) {
-      if (_fullMusicXml != widget.musicXml) {
-        _fullMusicXml = widget.musicXml;
-        _pageXmlCache.clear();
-        _pageStartMeasure.clear();
-        _pageStartMeasure[0] = 0;
-        _currentPageIndex = 0;
-        _totalMeasureCount = MusicXmlSplitter.getMeasureCount(_fullMusicXml!);
-      }
-
-      _loadCurrentPage();
+      // Always load the FULL document - no splitting!
+      _sendToJs('load', {'xml': widget.musicXml});
     } else if (widget.musicXmlUrl != null) {
-      // For URL, we don't support splitting easily yet unless we fetch it first
       _sendToJs('loadUrl', {'url': widget.musicXmlUrl});
     }
-  }
-
-  void _loadCurrentPage() {
-    if (_fullMusicXml == null) return;
-
-    String? xmlToLoad = _pageXmlCache[_currentPageIndex];
     
-    if (xmlToLoad == null) {
-      final start = _pageStartMeasure[_currentPageIndex] ?? 0;
-      xmlToLoad = MusicXmlSplitter.split(_fullMusicXml!, start, _totalMeasureCount - 1);
-    }
-
-    _sendToJs('load', {'xml': xmlToLoad});
+    // Wait for the load to complete
+    return _loadCompleter!.future;
   }
+
 
   void _handleScoreLoaded(MusicXmlScoreInfo info) {
+    debugPrint('=== TRACE: _handleScoreLoaded START (page=${info.pageCount})');
+    
     setState(() {
       _isLoading = false;
-      _isSplitting = false;
     });
-
-    // If we just loaded a page, and we have a lastFittingMeasure,
-    // we can calculate the start of the NEXT page.
-    if (info.lastFittingMeasure != -1 && info.lastFittingMeasure < _totalMeasureCount - 1) {
-      final nextStart = info.lastFittingMeasure + 1;
-      _pageStartMeasure[_currentPageIndex + 1] = nextStart;
-      
-      // Update cache for current page if not already there
-      if (!_pageXmlCache.containsKey(_currentPageIndex)) {
-          final start = _pageStartMeasure[_currentPageIndex] ?? 0;
-          _pageXmlCache[_currentPageIndex] = MusicXmlSplitter.split(_fullMusicXml!, start, info.lastFittingMeasure);
-          
-          // Reload the page with the truncated XML to ensure visual correctness
-          _loadCurrentPage();
-      }
-    }
-
-    // If we have total measures and last fitting measure, we can estimate better.
-    int estimatedPages = info.pageCount;
-    if (_totalMeasureCount > 0 && info.lastFittingMeasure != -1) {
-        // Simple estimate: if current page fits N measures (from start...lastFitting),
-        // and we have T total. 
-        // Note: info.lastFittingMeasure is 0-indexed index of last measure on THIS page.
-        // Measures on this page = (lastFittingMeasure + 1) - startMeasureOfPage.
-        
-        final startMeasure = _pageStartMeasure[_currentPageIndex] ?? 0;
-        final measuresOnThisPage = (info.lastFittingMeasure + 1) - startMeasure;
-        
-        if (measuresOnThisPage > 0) {
-            // How many measures left?
-            final measuresLeft = _totalMeasureCount - (info.lastFittingMeasure + 1);
-            if (measuresLeft > 0) {
-                final pagesLeft = (measuresLeft / measuresOnThisPage).ceil();
-                estimatedPages = (_currentPageIndex + 1) + pagesLeft;
-            } else {
-                estimatedPages = _currentPageIndex + 1;
-            }
-        }
-    } else if (_totalMeasureCount > 0 && info.measureCount < _totalMeasureCount) {
-        // Fallback: we don't know the exact fitting measure, but we know the sub-doc
-        // is smaller than the total. Assume at least one more page.
-        // We ensure button is enabled by saying pageCount = current + 2
-        // (current page is +1, plus at least one more)
-        estimatedPages = (_currentPageIndex + 1) + 1;
-    }
     
-    // Create new info object with estimated page count
-    final updatedInfo = MusicXmlScoreInfo(
-        title: info.title,
-        composer: info.composer,
-        subtitle: info.subtitle,
-        partCount: info.partCount,
-        measureCount: info.measureCount, // This is measure count of the sub-doc
-        pageCount: estimatedPages,
-        lastFittingMeasure: info.lastFittingMeasure,
-        totalMeasureCount: _totalMeasureCount,
-    );
+    debugPrint('=== TRACE: Completing load completer');
+    // Complete the load operation
+    if (_loadCompleter != null && !_loadCompleter!.isCompleted) {
+      _loadCompleter!.complete();
+    }
 
-    // Report to parent
-    widget.onLoaded?.call(updatedInfo);
+    // Report to parent - just pass through the info from OSMD
+    debugPrint('=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})');
+    widget.onLoaded?.call(info);
+    debugPrint('=== TRACE: _handleScoreLoaded END');
   }
 
   /// Set the current page in a paginated view.
   void setPage(int page) {
-    if (page - 1 == _currentPageIndex) return;
-    
-    setState(() {
-        _currentPageIndex = page - 1;
-        _isLoading = true;
-    });
-    
-    _loadCurrentPage();
+    // Just tell OSMD to scroll to the page - no reloading needed!
+    _sendToJs('setPage', {'page': page});
   }
 
   /// Reload the current content.
@@ -338,13 +309,14 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
 
   /// Set the zoom level (1.0 = 100%).
   void setZoom(double zoom) {
-    _sendToJs('setZoom', {'zoom': zoom});
-    // Invalidate cache on zoom change because fit will change
-    _pageXmlCache.clear();
-    _pageStartMeasure.clear();
-    _pageStartMeasure[0] = 0;
-    _currentPageIndex = 0;
-    _loadCurrentPage();
+    // Update zoom level in JavaScript
+    _controller?.runJavaScript('zoomLevel = $zoom;');
+    
+    // Reload the FULL document at new zoom
+    setState(() {
+      _isLoading = true;
+    });
+    _loadContent();
   }
 
   /// Navigate to a specific measure.

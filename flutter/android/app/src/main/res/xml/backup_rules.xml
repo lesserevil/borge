@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Backup rules for Android Auto Backup (API 23-30)
+    This configuration ensures Google Drive login state and app preferences
+    persist across app reinstalls.
+-->
+<full-backup-content>
+    <!-- Include SharedPreferences (contains Google Sign-In state and folder list) -->
+    <include domain="sharedpref" path="."/>
+    
+    <!-- Include app files (contains music folder configuration) -->
+    <include domain="file" path="."/>
+    
+    <!-- Exclude large cache directory to avoid excessive backup size -->
+    <exclude domain="file" path="google_drive_cache"/>
+</full-backup-content>

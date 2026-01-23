@@ -35,6 +35,55 @@ class SongRepository {
     return _songs;
   }
 
+  /// Load a single file and create a song from it.
+  ///
+  /// Useful for Google Drive downloaded files.
+  Future<Song?> loadFromFile(String filePath) async {
+    try {
+      // Extract file name and extension
+      var fileName = filePath.split('/').last;
+      final extensionMatch = RegExp(r'\.(xml|musicxml|mxl)$', caseSensitive: false).firstMatch(fileName);
+      
+      if (extensionMatch == null) {
+        return null; // Not a music file
+      }
+
+      final extension = extensionMatch.group(0)!;
+      final dirPath = _getParentDirectory(filePath);
+      
+      // Strip Google Drive file ID prefix ONLY if this is a cached Drive file
+      // Format: <fileId>-<originalFileName>
+      // Only apply this to files in google_drive_cache directory
+      if (filePath.contains('google_drive_cache')) {
+        final driveIdPattern = RegExp(r'^[a-zA-Z0-9_-]+-(.+)$');
+        final driveIdMatch = driveIdPattern.firstMatch(fileName);
+        if (driveIdMatch != null) {
+          fileName = driveIdMatch.group(1)!; // Use the original filename without the ID prefix
+        }
+      }
+      
+      final name = fileName.replaceAll(RegExp(r'\.(xml|musicxml|mxl)$', caseSensitive: false), '');
+      
+      // Generate a stable ID from the file path
+      final id = _generateId(filePath);
+
+      return Song(
+        id: id,
+        name: name,
+        pages: [
+          Page(
+            pageNumber: 1,
+            path: filePath,
+            extension: extension,
+          ),
+        ],
+        directoryPath: dirPath,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Gets a song by ID.
   Song? getSongById(String id) {
     try {
@@ -74,8 +123,13 @@ class SongRepository {
       // Generate a stable ID from the directory path
       final id = _generateId(dirPath);
 
-      // Use the directory name as the song name
-      final name = _getDirectoryName(dirPath);
+
+      // Use the filename (without extensions) as the song name if there's only one file
+      // Otherwise use the directory name for multi-file songs
+      final name = dirFiles.length == 1
+          ? _stripMusicXmlExtensions(dirFiles[0].name)
+          : _getDirectoryName(dirPath);
+
 
       // Create pages from files
       final pages = <Page>[];
@@ -117,6 +171,20 @@ class SongRepository {
       return dirPath;
     }
     return dirPath.substring(lastSeparator + 1);
+  }
+
+  String _stripMusicXmlExtensions(String filename) {
+    // Remove all .musicxml and .xml extensions (handles cases like "song.musicxml.xml")
+    String result = filename;
+    while (result.toLowerCase().endsWith('.musicxml') || 
+           result.toLowerCase().endsWith('.xml')) {
+      if (result.toLowerCase().endsWith('.musicxml')) {
+        result = result.substring(0, result.length - 9); // Remove '.musicxml'
+      } else if (result.toLowerCase().endsWith('.xml')) {
+        result = result.substring(0, result.length - 4); // Remove '.xml'
+      }
+    }
+    return result;
   }
 
   /// Generates a stable ID from a string.
