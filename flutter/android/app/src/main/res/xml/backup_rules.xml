@@ -13,7 +13,4 @@
     
     <!-- Exclude large cache directory to avoid excessive backup size -->
     <exclude domain="file" path="google_drive_cache"/>
-    
-    <!-- Exclude temporary files -->
-    <exclude domain="cache" path="."/>
 </full-backup-content>

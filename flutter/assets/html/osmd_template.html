@@ -337,14 +337,30 @@
         // Handle window resize
         let resizeTimeout;
         window.addEventListener('resize', () => {
+            console.log('🔄 Resize event fired');
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(async () => {
-                if (!osmd || !osmd.Sheet || !osmd.Sheet.sourceData) return;
+                console.log('🔄 Resize timeout executing');
+                console.log('🔄 OSMD state:', {
+                    osmd: !!osmd,
+                    sheet: !!(osmd && osmd.Sheet),
+                    sourceData: !!(osmd && osmd.Sheet && osmd.Sheet.sourceData)
+                });
 
+                if (!osmd || !osmd.Sheet || !osmd.Sheet.sourceData) {
+                    console.log('❌ Resize blocked: OSMD not ready');
+                    return;
+                }
+
+                console.log('✅ Starting resize re-render');
                 const firstVisibleMeasure = getFirstVisibleMeasure();
+                console.log('🔄 First visible measure:', firstVisibleMeasure);
+
                 await loadMusicXml(osmd.Sheet.sourceData);
+                console.log('✅ Resize re-render complete');
 
                 const targetPage = findPageWithMeasure(firstVisibleMeasure);
+                console.log('🔄 Scrolling to page:', targetPage);
                 scrollToPage(targetPage);
             }, 500);
         });

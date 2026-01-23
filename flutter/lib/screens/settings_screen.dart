@@ -1065,12 +1065,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
       applicationName: 'Borge',
       applicationVersion: '1.0.0',
       applicationLegalese:
-          '2024 - Sheet music viewer with hands-free navigation',
+          '© 2024 - Sheet music viewer with hands-free navigation',
       children: [
         const SizedBox(height: 16),
         const Text(
           'A sheet music viewer app designed for musicians who need '
           'hands-free page turning using Pebble smartwatch control.',
+        ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 16),
+        Text(
+          'Third-Party Licenses',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'OpenSheetMusicDisplay (OSMD)',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Licensed under BSD-3-Clause License\n\n'
+          'Copyright (c) 2016-present OpenSheetMusicDisplay contributors\n\n'
+          'Redistribution and use in source and binary forms, with or without '
+          'modification, are permitted provided that the following conditions are met:\n\n'
+          '1. Redistributions of source code must retain the above copyright notice, '
+          'this list of conditions and the following disclaimer.\n\n'
+          '2. Redistributions in binary form must reproduce the above copyright notice, '
+          'this list of conditions and the following disclaimer in the documentation '
+          'and/or other materials provided with the distribution.\n\n'
+          '3. Neither the name of the copyright holder nor the names of its contributors '
+          'may be used to endorse or promote products derived from this software without '
+          'specific prior written permission.\n\n'
+          'THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" '
+          'AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED.',
+          style: TextStyle(fontSize: 12, fontFamily: 'monospace'),
         ),
       ],
     );

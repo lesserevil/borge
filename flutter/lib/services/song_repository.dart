@@ -124,10 +124,10 @@ class SongRepository {
       final id = _generateId(dirPath);
 
 
-      // Use the filename (without extension) as the song name if there's only one file
+      // Use the filename (without extensions) as the song name if there's only one file
       // Otherwise use the directory name for multi-file songs
       final name = dirFiles.length == 1
-          ? dirFiles[0].name
+          ? _stripMusicXmlExtensions(dirFiles[0].name)
           : _getDirectoryName(dirPath);
 
 
@@ -171,6 +171,20 @@ class SongRepository {
       return dirPath;
     }
     return dirPath.substring(lastSeparator + 1);
+  }
+
+  String _stripMusicXmlExtensions(String filename) {
+    // Remove all .musicxml and .xml extensions (handles cases like "song.musicxml.xml")
+    String result = filename;
+    while (result.toLowerCase().endsWith('.musicxml') || 
+           result.toLowerCase().endsWith('.xml')) {
+      if (result.toLowerCase().endsWith('.musicxml')) {
+        result = result.substring(0, result.length - 9); // Remove '.musicxml'
+      } else if (result.toLowerCase().endsWith('.xml')) {
+        result = result.substring(0, result.length - 4); // Remove '.xml'
+      }
+    }
+    return result;
   }
 
   /// Generates a stable ID from a string.
