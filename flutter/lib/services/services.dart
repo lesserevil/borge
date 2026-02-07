@@ -1,3 +1,5 @@
+export 'annotation_exporter.dart';
+export 'annotation_repository.dart';
 export 'api_service.dart';
 export 'song_navigation_controller.dart';
 export 'direct_ip_service.dart';
