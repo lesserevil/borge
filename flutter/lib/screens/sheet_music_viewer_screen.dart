@@ -106,38 +106,40 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
           foregroundColor: Colors.white,
           title: Text(widget.appState.currentSong?.name ?? 'Sheet Music'),
           actions: [
-            // Annotation controls
-            if (_annotationMode) ...[
+            // Annotation controls (native platforms only - not supported on web)
+            if (!kIsWeb) ...[
+              if (_annotationMode) ...[
+                IconButton(
+                  icon: const Icon(Icons.undo),
+                  onPressed: _canUndo
+                      ? () => _rendererKey.currentState?.undo()
+                      : null,
+                  tooltip: 'Undo',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.redo),
+                  onPressed: _canRedo
+                      ? () => _rendererKey.currentState?.redo()
+                      : null,
+                  tooltip: 'Redo',
+                ),
+                const VerticalDivider(width: 1, color: Colors.white24),
+              ],
               IconButton(
-                icon: const Icon(Icons.undo),
-                onPressed: _canUndo
-                    ? () => _rendererKey.currentState?.undo()
-                    : null,
-                tooltip: 'Undo',
-              ),
-              IconButton(
-                icon: const Icon(Icons.redo),
-                onPressed: _canRedo
-                    ? () => _rendererKey.currentState?.redo()
-                    : null,
-                tooltip: 'Redo',
+                icon: Icon(
+                  _annotationMode ? Icons.draw : Icons.draw_outlined,
+                  color: _annotationMode ? Colors.amber : null,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _annotationMode = !_annotationMode;
+                  });
+                  _rendererKey.currentState?.setAnnotationMode(_annotationMode);
+                },
+                tooltip: _annotationMode ? 'Exit Drawing Mode' : 'Drawing Mode',
               ),
               const VerticalDivider(width: 1, color: Colors.white24),
             ],
-            IconButton(
-              icon: Icon(
-                _annotationMode ? Icons.draw : Icons.draw_outlined,
-                color: _annotationMode ? Colors.amber : null,
-              ),
-              onPressed: () {
-                setState(() {
-                  _annotationMode = !_annotationMode;
-                });
-                _rendererKey.currentState?.setAnnotationMode(_annotationMode);
-              },
-              tooltip: _annotationMode ? 'Exit Drawing Mode' : 'Drawing Mode',
-            ),
-            const VerticalDivider(width: 1, color: Colors.white24),
             IconButton(
               icon: const Icon(Icons.zoom_out),
               onPressed: () => widget.appState.zoom =
