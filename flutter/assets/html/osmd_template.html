@@ -43,6 +43,24 @@
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12) !important;
             border: 1px solid #e0e0e0 !important;
             margin-bottom: 20px !important;
+            position: relative !important;
+        }
+
+        /* Annotation canvas overlay - sits on top of each OSMD page */
+        .annotation-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            touch-action: none;
+        }
+
+        .annotation-canvas.drawing-mode {
+            pointer-events: auto;
+            cursor: crosshair;
         }
 
         #loading {
@@ -92,6 +110,546 @@
         let totalPages = 1;
         let zoomLevel = 1.0;
         let isReady = false;
+
+        // ── Annotation State ──────────────────────────────────────────
+        let annotationEnabled = false;       // Drawing mode toggle
+        let isDrawing = false;               // Currently drawing a stroke
+        let currentStrokePoints = [];        // Points in the current stroke
+        let annotationCanvases = new Map();  // pageIndex -> canvas element
+        let storedAnnotations = new Map();   // pageIndex -> [{svgPath, measureNumber, x, y}, ...]
+        let strokeColor = '#FF0000';
+        let strokeWidth = 2.5;
+
+        // ── Undo/Redo History Stack ───────────────────────────────────
+        let undoStack = [];   // [{pageIndex, annotation}, ...]
+        let redoStack = [];   // [{pageIndex, annotation}, ...]
+        const MAX_HISTORY = 100;
+
+        // ── Annotation Canvas Management ──────────────────────────────
+
+        /** Create or retrieve an annotation canvas for a given OSMD page element */
+        function getOrCreateAnnotationCanvas(pageDiv, pageIndex) {
+            if (annotationCanvases.has(pageIndex)) {
+                const existing = annotationCanvases.get(pageIndex);
+                // Resize if dimensions changed
+                if (existing.width !== pageDiv.clientWidth || existing.height !== pageDiv.clientHeight) {
+                    existing.width = pageDiv.clientWidth;
+                    existing.height = pageDiv.clientHeight;
+                    redrawAnnotations(pageIndex);
+                }
+                return existing;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'annotation-canvas';
+            canvas.width = pageDiv.clientWidth;
+            canvas.height = pageDiv.clientHeight;
+
+            if (annotationEnabled) {
+                canvas.classList.add('drawing-mode');
+            }
+
+            // Pointer events
+            canvas.addEventListener('pointerdown', (e) => onPointerDown(e, pageIndex));
+            canvas.addEventListener('pointermove', (e) => onPointerMove(e, pageIndex));
+            canvas.addEventListener('pointerup', (e) => onPointerUp(e, pageIndex));
+            canvas.addEventListener('pointercancel', (e) => onPointerUp(e, pageIndex));
+
+            pageDiv.appendChild(canvas);
+            annotationCanvases.set(pageIndex, canvas);
+            return canvas;
+        }
+
+        /** Create annotation canvases for all rendered OSMD pages */
+        function setupAnnotationCanvases() {
+            const pages = document.querySelectorAll('div[id^="osmdCanvasPage"]');
+            pages.forEach((pageDiv, index) => {
+                getOrCreateAnnotationCanvas(pageDiv, index);
+            });
+
+            // Redraw stored annotations
+            for (const [pageIndex] of storedAnnotations) {
+                redrawAnnotations(pageIndex);
+            }
+        }
+
+        /** Toggle drawing mode on all annotation canvases */
+        function setAnnotationMode(enabled) {
+            annotationEnabled = enabled;
+            for (const [, canvas] of annotationCanvases) {
+                if (enabled) {
+                    canvas.classList.add('drawing-mode');
+                } else {
+                    canvas.classList.remove('drawing-mode');
+                }
+            }
+            sendToFlutter('annotationModeChanged', { enabled: annotationEnabled });
+        }
+
+        /** Set stroke style for drawing */
+        function setAnnotationStyle(color, width) {
+            if (color) strokeColor = color;
+            if (width) strokeWidth = width;
+        }
+
+        // ── Pointer Event Handlers ────────────────────────────────────
+
+        function onPointerDown(e, pageIndex) {
+            if (!annotationEnabled) return;
+            e.preventDefault();
+            isDrawing = true;
+
+            const canvas = annotationCanvases.get(pageIndex);
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            currentStrokePoints = [{ x, y }];
+
+            // Start drawing preview
+            const ctx = canvas.getContext('2d');
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+        }
+
+        function onPointerMove(e, pageIndex) {
+            if (!isDrawing || !annotationEnabled) return;
+            e.preventDefault();
+
+            const canvas = annotationCanvases.get(pageIndex);
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            currentStrokePoints.push({ x, y });
+
+            // Draw line segment preview
+            const ctx = canvas.getContext('2d');
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+
+        function onPointerUp(e, pageIndex) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            isDrawing = false;
+
+            // Need at least 2 points for a stroke
+            if (currentStrokePoints.length < 2) {
+                currentStrokePoints = [];
+                return;
+            }
+
+            const canvas = annotationCanvases.get(pageIndex);
+
+            // Generate SVG path from points
+            const svgPath = pointsToSvgPath(currentStrokePoints);
+
+            // Find which measure this stroke is closest to
+            const midPoint = currentStrokePoints[Math.floor(currentStrokePoints.length / 2)];
+            const measureInfo = findMeasureAtPoint(midPoint.x, midPoint.y, pageIndex);
+
+            // Normalize coordinates relative to canvas size
+            const normX = midPoint.x / canvas.width;
+            const normY = midPoint.y / canvas.height;
+
+            // Store the annotation
+            const annotation = {
+                svgPath,
+                measureNumber: measureInfo.measureNumber,
+                x: normX,
+                y: normY,
+                color: strokeColor,
+                width: strokeWidth,
+            };
+
+            if (!storedAnnotations.has(pageIndex)) {
+                storedAnnotations.set(pageIndex, []);
+            }
+            storedAnnotations.get(pageIndex).push(annotation);
+
+            // Push to undo stack
+            pushToUndoStack(pageIndex, annotation);
+
+            // Notify Flutter of the new annotation
+            sendToFlutter('annotationAdded', {
+                pageIndex,
+                measureNumber: measureInfo.measureNumber,
+                svgPath,
+                x: normX,
+                y: normY,
+                color: strokeColor,
+                width: strokeWidth,
+            });
+
+            currentStrokePoints = [];
+
+            // Redraw cleanly (remove preview artifacts)
+            redrawAnnotations(pageIndex);
+        }
+
+        // ── SVG Path Generation ───────────────────────────────────────
+
+        /** Convert an array of {x, y} points to an SVG path string */
+        function pointsToSvgPath(points) {
+            if (points.length === 0) return '';
+            let path = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+            for (let i = 1; i < points.length; i++) {
+                path += ` L ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}`;
+            }
+            return path;
+        }
+
+        /** Parse an SVG path string back to an array of {x, y} points */
+        function svgPathToPoints(svgPath) {
+            const points = [];
+            const commands = svgPath.match(/[ML]\s*[\d.]+\s+[\d.]+/g);
+            if (!commands) return points;
+            for (const cmd of commands) {
+                const nums = cmd.match(/[\d.]+/g);
+                if (nums && nums.length >= 2) {
+                    points.push({ x: parseFloat(nums[0]), y: parseFloat(nums[1]) });
+                }
+            }
+            return points;
+        }
+
+        // ── Measure Coordinate Tracking ───────────────────────────────
+
+        /** Find the measure at a given point (pixel coordinates relative to page canvas) */
+        function findMeasureAtPoint(px, py, pageIndex) {
+            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.musicPages) {
+                return { measureNumber: 1 };
+            }
+
+            const page = osmd.GraphicSheet.musicPages[pageIndex];
+            if (!page || !page.musicSystems) {
+                return { measureNumber: 1 };
+            }
+
+            // OSMD uses a 10 units-per-mm coordinate system
+            // Convert pixel coords to OSMD units for comparison
+            const pageDiv = document.querySelectorAll('div[id^="osmdCanvasPage"]')[pageIndex];
+            if (!pageDiv) return { measureNumber: 1 };
+
+            let closestMeasure = 1;
+            let closestDistance = Infinity;
+
+            for (const system of page.musicSystems) {
+                if (!system.graphicalMeasures) continue;
+                for (const measureArray of system.graphicalMeasures) {
+                    if (!measureArray || measureArray.length === 0) continue;
+                    const gm = measureArray[0];
+                    const bbox = gm.boundingBox;
+                    if (!bbox) continue;
+
+                    // Get absolute position of the measure bounding box
+                    const absPos = bbox.absolutePosition;
+                    const size = bbox.size;
+                    if (!absPos || !size) continue;
+
+                    // Convert OSMD units to pixels (approximate)
+                    // OSMD uses 10 units per mm, screen is ~96 DPI = 3.78 px/mm
+                    const scale = (pageDiv.clientWidth / (page.pageWidth || pageDiv.clientWidth)) || 1;
+                    const mx = absPos.x * scale;
+                    const my = absPos.y * scale;
+                    const mw = size.width * scale;
+                    const mh = size.height * scale;
+
+                    // Center of measure
+                    const cx = mx + mw / 2;
+                    const cy = my + mh / 2;
+
+                    const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+                    if (dist < closestDistance) {
+                        closestDistance = dist;
+                        closestMeasure = gm.parentSourceMeasure?.measureNumber || 1;
+                    }
+                }
+            }
+
+            return { measureNumber: closestMeasure };
+        }
+
+        // ── Annotation Rendering ──────────────────────────────────────
+
+        /** Redraw all stored annotations for a given page */
+        function redrawAnnotations(pageIndex) {
+            const canvas = annotationCanvases.get(pageIndex);
+            if (!canvas) return;
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const annotations = storedAnnotations.get(pageIndex);
+            if (!annotations) return;
+
+            for (const ann of annotations) {
+                if (ann.type === 'structured' && ann.kind && STRUCTURED_SYMBOLS[ann.kind]) {
+                    // Structured annotation: render symbol at normalized position
+                    const px = ann.x * canvas.width;
+                    const py = ann.y * canvas.height;
+                    STRUCTURED_SYMBOLS[ann.kind].render(ctx, px, py, ann.data || {});
+                } else if (ann.svgPath) {
+                    // Freehand annotation: draw SVG path
+                    drawSvgPath(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth);
+                }
+            }
+        }
+
+        /** Draw an SVG path on a canvas context */
+        function drawSvgPath(ctx, svgPath, color, width) {
+            const points = svgPathToPoints(svgPath);
+            if (points.length < 2) return;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
+
+        /** Load annotations from Flutter (restore saved annotations) */
+        function loadAnnotations(annotations) {
+            // annotations: [{pageIndex, svgPath, measureNumber, x, y, color, width}, ...]
+            storedAnnotations.clear();
+            for (const ann of annotations) {
+                const pi = ann.pageIndex || 0;
+                if (!storedAnnotations.has(pi)) {
+                    storedAnnotations.set(pi, []);
+                }
+                storedAnnotations.get(pi).push(ann);
+            }
+
+            // Redraw all pages
+            for (const [pi] of storedAnnotations) {
+                redrawAnnotations(pi);
+            }
+        }
+
+        /** Clear all annotations for a specific page or all pages */
+        function clearAnnotations(pageIndex) {
+            if (pageIndex !== undefined && pageIndex !== null) {
+                storedAnnotations.delete(pageIndex);
+                redrawAnnotations(pageIndex);
+            } else {
+                storedAnnotations.clear();
+                for (const [pi] of annotationCanvases) {
+                    redrawAnnotations(pi);
+                }
+            }
+            sendToFlutter('annotationsCleared', { pageIndex: pageIndex ?? -1 });
+        }
+
+        /** Remove the last annotation from a page */
+        function removeLastAnnotation(pageIndex) {
+            const annotations = storedAnnotations.get(pageIndex);
+            if (annotations && annotations.length > 0) {
+                const removed = annotations.pop();
+                redrawAnnotations(pageIndex);
+                sendToFlutter('annotationRemoved', {
+                    pageIndex,
+                    measureNumber: removed.measureNumber,
+                    remaining: annotations.length,
+                });
+            }
+        }
+
+        // ── Structured Annotation Symbols ─────────────────────────────
+
+        /** Symbol definitions for structured annotations */
+        const STRUCTURED_SYMBOLS = {
+            fingerNumber: {
+                render: (ctx, x, y, data) => {
+                    const num = data.value || '1';
+                    ctx.font = 'bold 16px serif';
+                    ctx.fillStyle = data.color || '#0066CC';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(num, x, y);
+                },
+            },
+            dynamicMark: {
+                render: (ctx, x, y, data) => {
+                    const mark = data.value || 'mf';
+                    ctx.font = 'italic bold 14px serif';
+                    ctx.fillStyle = data.color || '#CC0000';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(mark, x, y);
+                },
+            },
+            bowing: {
+                render: (ctx, x, y, data) => {
+                    const type = data.value || 'down';
+                    ctx.strokeStyle = data.color || '#333333';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    if (type === 'down') {
+                        // Down-bow: ∏ shape
+                        ctx.moveTo(x - 8, y - 10);
+                        ctx.lineTo(x - 8, y + 2);
+                        ctx.lineTo(x + 8, y + 2);
+                        ctx.lineTo(x + 8, y - 10);
+                    } else {
+                        // Up-bow: V shape
+                        ctx.moveTo(x - 8, y + 6);
+                        ctx.lineTo(x, y - 10);
+                        ctx.lineTo(x + 8, y + 6);
+                    }
+                    ctx.stroke();
+                },
+            },
+            articulation: {
+                render: (ctx, x, y, data) => {
+                    const type = data.value || 'staccato';
+                    ctx.fillStyle = data.color || '#333333';
+                    ctx.strokeStyle = data.color || '#333333';
+                    ctx.lineWidth = 2;
+
+                    switch (type) {
+                        case 'staccato':
+                            ctx.beginPath();
+                            ctx.arc(x, y, 3, 0, Math.PI * 2);
+                            ctx.fill();
+                            break;
+                        case 'accent':
+                            ctx.beginPath();
+                            ctx.moveTo(x - 8, y - 4);
+                            ctx.lineTo(x + 8, y);
+                            ctx.lineTo(x - 8, y + 4);
+                            ctx.stroke();
+                            break;
+                        case 'tenuto':
+                            ctx.beginPath();
+                            ctx.moveTo(x - 8, y);
+                            ctx.lineTo(x + 8, y);
+                            ctx.stroke();
+                            break;
+                        case 'fermata':
+                            ctx.beginPath();
+                            ctx.arc(x, y - 2, 8, Math.PI, 0);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.arc(x, y - 2, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                            break;
+                        default:
+                            // Default: small circle
+                            ctx.beginPath();
+                            ctx.arc(x, y, 3, 0, Math.PI * 2);
+                            ctx.fill();
+                    }
+                },
+            },
+        };
+
+        /** Add a structured annotation symbol to a page */
+        function addStructuredAnnotation(pageIndex, kind, measureNumber, normX, normY, data) {
+            const canvas = annotationCanvases.get(pageIndex);
+            if (!canvas) return;
+
+            const annotation = {
+                type: 'structured',
+                kind,
+                measureNumber,
+                x: normX,
+                y: normY,
+                data: data || {},
+                color: data?.color || strokeColor,
+            };
+
+            if (!storedAnnotations.has(pageIndex)) {
+                storedAnnotations.set(pageIndex, []);
+            }
+            storedAnnotations.get(pageIndex).push(annotation);
+
+            // Push to undo stack
+            pushToUndoStack(pageIndex, annotation);
+
+            redrawAnnotations(pageIndex);
+
+            sendToFlutter('annotationAdded', {
+                pageIndex,
+                measureNumber,
+                svgPath: '',
+                x: normX,
+                y: normY,
+                color: annotation.color,
+                width: 0,
+                structured: true,
+                kind,
+                data,
+            });
+        }
+
+        // ── Undo/Redo Functions ───────────────────────────────────────
+
+        function pushToUndoStack(pageIndex, annotation) {
+            undoStack.push({ pageIndex, annotation });
+            if (undoStack.length > MAX_HISTORY) {
+                undoStack.shift();
+            }
+            redoStack = [];
+            notifyHistoryState();
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+
+            const entry = undoStack.pop();
+            const { pageIndex, annotation } = entry;
+
+            const annotations = storedAnnotations.get(pageIndex);
+            if (annotations) {
+                const idx = annotations.indexOf(annotation);
+                if (idx !== -1) {
+                    annotations.splice(idx, 1);
+                } else if (annotations.length > 0) {
+                    annotations.pop();
+                }
+                redrawAnnotations(pageIndex);
+            }
+
+            redoStack.push(entry);
+            notifyHistoryState();
+            sendToFlutter('undoPerformed', { pageIndex, remaining: undoStack.length });
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+
+            const entry = redoStack.pop();
+            const { pageIndex, annotation } = entry;
+
+            if (!storedAnnotations.has(pageIndex)) {
+                storedAnnotations.set(pageIndex, []);
+            }
+            storedAnnotations.get(pageIndex).push(annotation);
+            redrawAnnotations(pageIndex);
+
+            undoStack.push(entry);
+            notifyHistoryState();
+            sendToFlutter('redoPerformed', { pageIndex, remaining: redoStack.length });
+        }
+
+        function notifyHistoryState() {
+            sendToFlutter('historyChanged', {
+                canUndo: undoStack.length > 0,
+                canRedo: redoStack.length > 0,
+                undoCount: undoStack.length,
+                redoCount: redoStack.length,
+            });
+        }
 
         async function init(options = {}) {
             try {
@@ -163,6 +721,9 @@
 
                 scrollToPage(1);
                 sendToFlutter('loaded', scoreInfo);
+
+                // Set up annotation canvas overlays after render
+                setupAnnotationCanvases();
 
             } catch (error) {
                 hideLoading();
@@ -322,6 +883,38 @@
                         break;
                     case 'clear':
                         clear();
+                        break;
+                    // ── Annotation Actions ──
+                    case 'setAnnotationMode':
+                        setAnnotationMode(payload.enabled);
+                        break;
+                    case 'setAnnotationStyle':
+                        setAnnotationStyle(payload.color, payload.width);
+                        break;
+                    case 'loadAnnotations':
+                        loadAnnotations(payload.annotations || []);
+                        break;
+                    case 'clearAnnotations':
+                        clearAnnotations(payload.pageIndex);
+                        break;
+                    case 'removeLastAnnotation':
+                        removeLastAnnotation(payload.pageIndex);
+                        break;
+                    case 'addStructuredAnnotation':
+                        addStructuredAnnotation(
+                            payload.pageIndex,
+                            payload.kind,
+                            payload.measureNumber,
+                            payload.x,
+                            payload.y,
+                            payload.data
+                        );
+                        break;
+                    case 'undo':
+                        undo();
+                        break;
+                    case 'redo':
+                        redo();
                         break;
                     default:
                         console.warn('Unknown action:', action);
