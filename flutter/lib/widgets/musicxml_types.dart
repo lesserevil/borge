@@ -90,3 +90,44 @@ class MusicXmlRenderOptions {
 typedef OnScoreLoaded = void Function(MusicXmlScoreInfo info);
 typedef OnError = void Function(String message, String type);
 typedef OnReady = void Function();
+
+/// Callback types for annotation events.
+typedef OnAnnotationAdded = void Function(AnnotationEvent event);
+typedef OnAnnotationRemoved =
+    void Function(int pageIndex, int measureNumber, int remaining);
+typedef OnAnnotationsCleared = void Function(int pageIndex);
+typedef OnAnnotationModeChanged = void Function(bool enabled);
+typedef OnHistoryChanged = void Function(bool canUndo, bool canRedo);
+
+/// Data from an annotation event sent from JavaScript.
+class AnnotationEvent {
+  final int pageIndex;
+  final int measureNumber;
+  final String svgPath;
+  final double x;
+  final double y;
+  final String color;
+  final double width;
+
+  const AnnotationEvent({
+    required this.pageIndex,
+    required this.measureNumber,
+    required this.svgPath,
+    required this.x,
+    required this.y,
+    required this.color,
+    required this.width,
+  });
+
+  factory AnnotationEvent.fromJson(Map<String, dynamic> json) {
+    return AnnotationEvent(
+      pageIndex: json['pageIndex'] as int? ?? 0,
+      measureNumber: json['measureNumber'] as int? ?? 1,
+      svgPath: json['svgPath'] as String? ?? '',
+      x: (json['x'] as num?)?.toDouble() ?? 0.0,
+      y: (json['y'] as num?)?.toDouble() ?? 0.0,
+      color: json['color'] as String? ?? '#FF0000',
+      width: (json['width'] as num?)?.toDouble() ?? 2.5,
+    );
+  }
+}
