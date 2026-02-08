@@ -11,6 +11,20 @@ services:
     stdin_open: true
     tty: true
 
+  flutter-usb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+      - flutter-pub-cache:/root/.pub-cache
+      - flutter-gradle-cache:/root/.gradle
+      - /dev/bus/usb:/dev/bus/usb
+    working_dir: /workspace
+    privileged: true
+    stdin_open: true
+    tty: true
+
   pebble:
     build:
       context: .

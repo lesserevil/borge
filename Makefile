@@ -9,12 +9,8 @@ FLUTTER_DIR := flutter
 # Docker (default development method)
 DOCKER_COMPOSE := docker compose
 DOCKER_FLUTTER := $(DOCKER_COMPOSE) run --rm flutter
+DOCKER_FLUTTER_USB := $(DOCKER_COMPOSE) run --rm flutter-usb
 DOCKER_PEBBLE  := $(DOCKER_COMPOSE) run --rm pebble
-
-# Bare-metal (for local dev without Docker)
-FLUTTER := fvm flutter
-FLUTTER_BIN := $(FLUTTER_DIR)/build/linux/x64/release/bundle/borge
-INSTALL_DIR := $(HOME)/.local/bin
 
 # ----------------------------------------------------------------------
 # Standard Targets (Docker — default)
@@ -40,10 +36,32 @@ build-web: deps
 	@echo "🌐 Building web app..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build web --release"
 
+.PHONY: run-web
+run-web: deps
+	@echo "🌐 Serving Flutter app on http://localhost:8080..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0"
+
 .PHONY: build-apk
 build-apk: deps
 	@echo "📱 Building Android APK..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build apk --release"
+
+APK_PATH := flutter/build/app/outputs/flutter-apk/app-release.apk
+
+# ADB_HOST: set to <ip>:<port> to install over TCP (direct device or adb bridge).
+# Leave unset to install via USB.
+ADB_HOST ?=
+
+.PHONY: install-apk
+install-apk: build-apk
+ifdef ADB_HOST
+	@echo "📲 Installing APK on remote device $(ADB_HOST)..."
+	@$(DOCKER_FLUTTER) bash -c "adb connect $(ADB_HOST) && adb -s $(ADB_HOST) wait-for-device && adb -s $(ADB_HOST) install -r $(APK_PATH)"
+else
+	@echo "📲 Installing APK on USB-connected device..."
+	@$(DOCKER_FLUTTER_USB) bash -c "adb wait-for-device && adb install -r $(APK_PATH)"
+endif
+	@echo "✅ APK installed."
 
 .PHONY: pebble
 pebble:
@@ -69,39 +87,6 @@ clean:
 .PHONY: package
 package: build-apk
 	@echo "📦 All packaged."
-
-# ----------------------------------------------------------------------
-# Bare-Metal Targets (local dev without Docker)
-# ----------------------------------------------------------------------
-
-.PHONY: bare-deps
-bare-deps:
-	@echo "⬇️  Installing dependencies (bare metal)..."
-	@cd $(FLUTTER_DIR) && $(FLUTTER) pub get
-
-.PHONY: bare-build
-bare-build: bare-deps
-	@echo "🔨 Building Flutter app for native desktop (bare metal)..."
-	@cd $(FLUTTER_DIR) && $(FLUTTER) build linux --release
-
-.PHONY: bare-test
-bare-test: bare-build
-	@echo "🧪 Running Flutter tests (bare metal)..."
-	@cd $(FLUTTER_DIR) && $(FLUTTER) test
-
-.PHONY: bare-install
-bare-install: bare-test
-	@echo "📦 Installing binary to $(INSTALL_DIR)..."
-	@mkdir -p $(INSTALL_DIR)
-	@mkdir -p $(HOME)/.local/share/borge
-	@cp -r $(FLUTTER_DIR)/build/linux/x64/release/bundle/* $(HOME)/.local/share/borge/
-	@ln -sf $(HOME)/.local/share/borge/borge $(INSTALL_DIR)/borge
-	@echo "✅ Installed 'borge' to $(INSTALL_DIR)"
-
-.PHONY: bare-run
-bare-run: bare-test
-	@echo "🚀 Running Borge (bare metal)..."
-	@$(FLUTTER_BIN)
 
 # ----------------------------------------------------------------------
 # Pebble & Services (Legacy/Dev Targets)
@@ -169,34 +154,3 @@ stop-local:
 	@pkill -f "emulator.*-avd $(TEST_AVD)" || true
 	@pkill -f "pebble emulate" || true
 	@rm -f .pebble_emu.pid .test-local.running
-
-# ----------------------------------------------------------------------
-# Additional Flutter Targets (bare metal)
-# ----------------------------------------------------------------------
-
-.PHONY: bare-run-web
-bare-run-web:
-	@echo "🌐 Serving Flutter app on http://localhost:8080 (bare metal)..."
-	@cd $(FLUTTER_DIR) && $(FLUTTER) run -d web-server --web-port 8080 --web-hostname 0.0.0.0
-
-.PHONY: bare-build-apk
-bare-build-apk:
-	@echo "🔨 Building Flutter APK for Android (bare metal)..."
-	@cd $(FLUTTER_DIR) && $(FLUTTER) build apk --release
-
-.PHONY: bare-run-remote
-bare-run-remote:
-	@echo "📱 Running Flutter on remote Android device (bare metal)..."
-	@cd $(FLUTTER_DIR) && export ANDROID_HOME=/usr/lib/android-sdk && $(FLUTTER) devices
-	@echo "🚀 Launching app..."
-	@cd $(FLUTTER_DIR) && export ANDROID_HOME=/usr/lib/android-sdk && $(FLUTTER) run
-
-# ----------------------------------------------------------------------
-# Cleanup (bare metal)
-# ----------------------------------------------------------------------
-
-.PHONY: bare-clean
-bare-clean:
-	@echo "🧹 Cleaning native build artifacts..."
-	@cd $(FLUTTER_DIR) && rm -rf build/linux build/app/outputs/flutter-apk
-	@echo "🧹 All cleaned."
