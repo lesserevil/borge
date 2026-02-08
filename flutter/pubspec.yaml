@@ -105,6 +105,7 @@ flutter:
   # Sheet music assets
   assets:
     - assets/music/
+    - assets/music-web/
     - assets/html/
     - assets/js/
 

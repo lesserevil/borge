@@ -68,6 +68,12 @@ make build-web
 # Build Android APK
 make build-apk
 
+# Install APK on USB-connected device
+make install-apk
+
+# Install APK on a remote device (or ADB TCP bridge)
+make install-apk ADB_HOST=192.168.1.50:5555
+
 # Build Pebble firmware
 make pebble
 
