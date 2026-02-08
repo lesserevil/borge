@@ -4,8 +4,6 @@ import 'dart:io' as io;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:pdfx/pdfx.dart';
 
 import '../models/models.dart' as models;
 import '../state/app_state.dart';
@@ -41,7 +39,9 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
     final currentOrientation = MediaQuery.of(context).orientation;
     if (_lastOrientation != null && _lastOrientation != currentOrientation) {
       // Orientation changed - trigger re-render
-      debugPrint('🔄 Orientation changed from $_lastOrientation to $currentOrientation');
+      debugPrint(
+        '🔄 Orientation changed from $_lastOrientation to $currentOrientation',
+      );
       _handleOrientationChange();
     }
     _lastOrientation = currentOrientation;
@@ -77,10 +77,10 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       } else if (event.logicalKey == LogicalKeyboardKey.end) {
         widget.appState.goToPage(widget.appState.totalPages - 1);
       } else if (event.logicalKey == LogicalKeyboardKey.equal ||
-                 event.logicalKey == LogicalKeyboardKey.add) {
+          event.logicalKey == LogicalKeyboardKey.add) {
         widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
       } else if (event.logicalKey == LogicalKeyboardKey.minus ||
-                 event.logicalKey == LogicalKeyboardKey.underscore) {
+          event.logicalKey == LogicalKeyboardKey.underscore) {
         widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         Navigator.of(context).pop();
@@ -102,12 +102,14 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.zoom_out),
-              onPressed: () => widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.5, 3.0),
+              onPressed: () => widget.appState.zoom =
+                  (widget.appState.zoom - 0.1).clamp(0.5, 3.0),
               tooltip: 'Zoom Out',
             ),
             IconButton(
               icon: const Icon(Icons.zoom_in),
-              onPressed: () => widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.5, 3.0),
+              onPressed: () => widget.appState.zoom =
+                  (widget.appState.zoom + 0.1).clamp(0.5, 3.0),
               tooltip: 'Zoom In',
             ),
             ListenableBuilder(
@@ -145,14 +147,14 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
               child: Stack(
                 children: [
                   // Sheet music display
-                SizedBox.expand(
-                  child: _SheetMusicPage(
-                    key: ValueKey(page.path),
-                    page: page,
-                    songName: widget.appState.currentSong?.name ?? "",
-                    appState: widget.appState,
+                  SizedBox.expand(
+                    child: _SheetMusicPage(
+                      key: ValueKey(page.path),
+                      page: page,
+                      songName: widget.appState.currentSong?.name ?? "",
+                      appState: widget.appState,
+                    ),
                   ),
-                ),
                   // Navigation overlay
                   _NavigationOverlay(
                     canGoPrevious: widget.appState.canGoPrevious,
@@ -205,7 +207,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
 }
 
 /// Widget displaying a single sheet music page.
-/// Supports PDF, PNG, JPG, SVG, and shows a placeholder for demo/missing files.
+/// Supports MusicXML files and shows a placeholder for demo/missing files.
 class _SheetMusicPage extends StatefulWidget {
   final models.Page page;
   final String songName;
@@ -223,7 +225,6 @@ class _SheetMusicPage extends StatefulWidget {
 }
 
 class _SheetMusicPageState extends State<_SheetMusicPage> {
-  PdfControllerPinch? _pdfController;
   String? _musicXmlContent;
   bool _isLoading = true;
   String? _error;
@@ -250,8 +251,6 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
   }
 
   void _disposeControllers() {
-    _pdfController?.dispose();
-    _pdfController = null;
     _musicXmlContent = null;
   }
 
@@ -264,14 +263,12 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     final ext = widget.page.extension.toLowerCase();
 
     try {
-      if (ext == '.pdf') {
-        await _loadPdf();
-      } else if (ext == '.musicxml' || ext == '.xml' || ext == '.mxl') {
+      if (ext == '.musicxml' || ext == '.xml' || ext == '.mxl') {
         await _loadMusicXml();
       } else {
-        // For images and SVGs, just mark as loaded - they load on demand
         setState(() {
           _isLoading = false;
+          _error = 'Unsupported file type: $ext';
         });
       }
     } catch (e) {
@@ -293,7 +290,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
         final bytes = await NetworkAssetBundle(
           Uri.parse(path),
         ).load(path).then((data) => data.buffer.asUint8List());
-        
+
         try {
           xmlContent = utf8.decode(bytes);
         } catch (_) {
@@ -338,48 +335,9 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     }
   }
 
-  Future<void> _loadPdf() async {
-    final path = widget.page.path;
-
-    try {
-      PdfDocument document;
-
-      if (path.startsWith('http://') || path.startsWith('https://')) {
-        // Network PDF
-        document = await PdfDocument.openData(
-          await NetworkAssetBundle(
-            Uri.parse(path),
-          ).load(path).then((data) => data.buffer.asUint8List()),
-        );
-      } else if (path.startsWith('assets/')) {
-        // Asset PDF
-        document = await PdfDocument.openAsset(path);
-      } else if (!kIsWeb) {
-        // File system PDF (not available on web)
-        document = await PdfDocument.openFile(path);
-      } else {
-        throw Exception('Cannot load local files on web');
-      }
-
-      _pdfController = PdfControllerPinch(document: Future.value(document));
-
-      setState(() {
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _error = 'Failed to load PDF: $e';
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: _buildContent(),
-    );
+    return Container(color: Colors.white, child: _buildContent());
   }
 
   Widget _buildContent() {
@@ -404,16 +362,6 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     }
 
     switch (ext) {
-      case '.pdf':
-        return _buildPdfView();
-      case '.svg':
-        return _buildSvgView(path);
-      case '.png':
-      case '.jpg':
-      case '.jpeg':
-      case '.gif':
-      case '.webp':
-        return _buildImageView(path);
       case '.musicxml':
       case '.xml':
       case '.mxl':
@@ -444,8 +392,10 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       ),
       onLoaded: (info) {
         debugPrint('MusicXML loaded: ${info.title} by ${info.composer}');
-        debugPrint('Parts: ${info.partCount}, Measures: ${info.measureCount}, Pages: ${info.pageCount}');
-        
+        debugPrint(
+          'Parts: ${info.partCount}, Measures: ${info.measureCount}, Pages: ${info.pageCount}',
+        );
+
         // Notify AppState to expand document if multiple pages exist
         if (info.pageCount > 1) {
           // Update page count (may have changed due to zoom)
@@ -460,145 +410,6 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     );
   }
 
-  Widget _buildPdfView() {
-    if (_pdfController == null) {
-      return _buildPlaceholder(error: 'PDF controller not initialized');
-    }
-
-    return AspectRatio(
-      aspectRatio: 8.5 / 11,
-      child: PdfViewPinch(
-        controller: _pdfController!,
-        builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
-          options: const DefaultBuilderOptions(),
-          documentLoaderBuilder: (_) =>
-              const Center(child: CircularProgressIndicator()),
-          pageLoaderBuilder: (_) =>
-              const Center(child: CircularProgressIndicator()),
-          errorBuilder: (_, error) => Center(
-            child: Text(
-              'Error loading PDF: $error',
-              style: const TextStyle(color: Colors.red),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSvgView(String path) {
-    Widget svgWidget;
-
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      svgWidget = SvgPicture.network(
-        path,
-        fit: BoxFit.contain,
-        placeholderBuilder: (_) =>
-            const Center(child: CircularProgressIndicator()),
-      );
-    } else if (path.startsWith('assets/')) {
-      svgWidget = SvgPicture.asset(path, fit: BoxFit.contain);
-    } else if (!kIsWeb) {
-      // Load SVG from file system (not available on web)
-      return _buildSvgFromFile(path);
-    } else {
-      return _buildPlaceholder(error: 'Cannot load local files on web');
-    }
-
-    return AspectRatio(
-      aspectRatio: 8.5 / 11,
-      child: Padding(padding: const EdgeInsets.all(16), child: svgWidget),
-    );
-  }
-
-  Widget _buildSvgFromFile(String path) {
-    // Read SVG file and render from string to avoid File type conflicts
-    return FutureBuilder<String>(
-      future: io.File(path).readAsString(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const AspectRatio(
-            aspectRatio: 8.5 / 11,
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (snapshot.hasError) {
-          return _buildPlaceholder(
-            error: 'Failed to load SVG: ${snapshot.error}',
-          );
-        }
-        return AspectRatio(
-          aspectRatio: 8.5 / 11,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: SvgPicture.string(snapshot.data!, fit: BoxFit.contain),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildImageView(String path) {
-    Widget imageWidget;
-
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      imageWidget = Image.network(
-        path,
-        fit: BoxFit.contain,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Center(
-            child: CircularProgressIndicator(
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded /
-                        loadingProgress.expectedTotalBytes!
-                  : null,
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.broken_image, size: 48, color: Colors.grey),
-                const SizedBox(height: 8),
-                Text(
-                  'Failed to load image',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    } else if (path.startsWith('assets/')) {
-      imageWidget = Image.asset(
-        path,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildPlaceholder(error: 'Asset not found: $path');
-        },
-      );
-    } else if (!kIsWeb) {
-      imageWidget = Image.file(
-        io.File(path),
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) {
-          return _buildPlaceholder(error: 'File not found: $path');
-        },
-      );
-    } else {
-      return _buildPlaceholder(error: 'Cannot load local files on web');
-    }
-
-    return AspectRatio(
-      aspectRatio: 8.5 / 11,
-      child: Padding(padding: const EdgeInsets.all(16), child: imageWidget),
-    );
-  }
-
-  /// Builds a placeholder with mock staff lines for demo mode.
   Widget _buildPlaceholder({String? error}) {
     return AspectRatio(
       aspectRatio: 8.5 / 11,

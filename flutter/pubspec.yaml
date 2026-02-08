@@ -38,10 +38,7 @@ dependencies:
   # Crypto for hashing (used for generating song IDs)
   crypto: ^3.0.3
 
-  # PDF rendering (cross-platform including web)
-  pdfx: ^2.6.0
-
-  # SVG rendering
+  # SVG rendering (used by MusicXML renderer)
   flutter_svg: ^2.2.3
 
   # MusicXML parsing
