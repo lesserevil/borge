@@ -31,9 +31,10 @@ void main() {
       await song1Dir.create();
       await song2Dir.create();
 
-      await File('${song1Dir.path}/page1.pdf').writeAsString('test');
-      await File('${song1Dir.path}/page2.pdf').writeAsString('test');
-      await File('${song2Dir.path}/sheet.pdf').writeAsString('test');
+      await File('${song1Dir.path}/page1.musicxml').writeAsString('test');
+      await File('${song1Dir.path}/page2.musicxml').writeAsString('test');
+      await File('${song2Dir.path}/part1.musicxml').writeAsString('test');
+      await File('${song2Dir.path}/part2.musicxml').writeAsString('test');
 
       final songs = await repository.loadFromDirectory(tempDir.path);
 
@@ -46,9 +47,9 @@ void main() {
       final songDir = Directory('${tempDir.path}/MySong');
       await songDir.create();
 
-      await File('${songDir.path}/page1.pdf').writeAsString('test');
-      await File('${songDir.path}/page2.pdf').writeAsString('test');
-      await File('${songDir.path}/page3.pdf').writeAsString('test');
+      await File('${songDir.path}/page1.musicxml').writeAsString('test');
+      await File('${songDir.path}/page2.musicxml').writeAsString('test');
+      await File('${songDir.path}/page3.musicxml').writeAsString('test');
 
       final songs = await repository.loadFromDirectory(tempDir.path);
 
@@ -63,21 +64,26 @@ void main() {
       final songDir = Directory('${tempDir.path}/MySong');
       await songDir.create();
 
-      await File('${songDir.path}/page10.pdf').writeAsString('test');
-      await File('${songDir.path}/page2.pdf').writeAsString('test');
-      await File('${songDir.path}/page1.pdf').writeAsString('test');
+      await File('${songDir.path}/page10.musicxml').writeAsString('test');
+      await File('${songDir.path}/page2.musicxml').writeAsString('test');
+      await File('${songDir.path}/page1.musicxml').writeAsString('test');
 
       final songs = await repository.loadFromDirectory(tempDir.path);
-      final pageFiles =
-          songs.first.pages.map((p) => p.path.split('/').last).toList();
+      final pageFiles = songs.first.pages
+          .map((p) => p.path.split('/').last)
+          .toList();
 
-      expect(pageFiles, ['page1.pdf', 'page2.pdf', 'page10.pdf']);
+      expect(pageFiles, [
+        'page1.musicxml',
+        'page2.musicxml',
+        'page10.musicxml',
+      ]);
     });
 
     test('generates stable IDs from directory path', () async {
       final songDir = Directory('${tempDir.path}/TestSong');
       await songDir.create();
-      await File('${songDir.path}/page.pdf').writeAsString('test');
+      await File('${songDir.path}/page.musicxml').writeAsString('test');
 
       final songs1 = await repository.loadFromDirectory(tempDir.path);
       final songs2 = await repository.loadFromDirectory(tempDir.path);
@@ -88,7 +94,7 @@ void main() {
     test('getSongById returns correct song', () async {
       final songDir = Directory('${tempDir.path}/FindMe');
       await songDir.create();
-      await File('${songDir.path}/page.pdf').writeAsString('test');
+      await File('${songDir.path}/FindMe.musicxml').writeAsString('test');
 
       await repository.loadFromDirectory(tempDir.path);
       final song = repository.songs.first;
@@ -105,8 +111,8 @@ void main() {
     test('toJson produces valid JSON structure', () async {
       final songDir = Directory('${tempDir.path}/JsonSong');
       await songDir.create();
-      await File('${songDir.path}/p1.pdf').writeAsString('test');
-      await File('${songDir.path}/p2.pdf').writeAsString('test');
+      await File('${songDir.path}/p1.musicxml').writeAsString('test');
+      await File('${songDir.path}/p2.musicxml').writeAsString('test');
 
       await repository.loadFromDirectory(tempDir.path);
       final json = repository.toJson();
@@ -123,7 +129,7 @@ void main() {
     test('toJsonString produces valid JSON string', () async {
       final songDir = Directory('${tempDir.path}/StringSong');
       await songDir.create();
-      await File('${songDir.path}/page.pdf').writeAsString('test');
+      await File('${songDir.path}/page.musicxml').writeAsString('test');
 
       await repository.loadFromDirectory(tempDir.path);
       final jsonString = repository.toJsonString();
@@ -135,7 +141,7 @@ void main() {
     test('loadFromDirectorySync works', () async {
       final songDir = Directory('${tempDir.path}/SyncSong');
       await songDir.create();
-      await File('${songDir.path}/page.pdf').writeAsString('test');
+      await File('${songDir.path}/SyncSong.musicxml').writeAsString('test');
 
       final songs = repository.loadFromDirectorySync(tempDir.path);
 
@@ -146,26 +152,26 @@ void main() {
     test('songs list is unmodifiable', () async {
       final songDir = Directory('${tempDir.path}/TestSong');
       await songDir.create();
-      await File('${songDir.path}/page.pdf').writeAsString('test');
+      await File('${songDir.path}/page.musicxml').writeAsString('test');
 
       await repository.loadFromDirectory(tempDir.path);
       final song = repository.songs.first;
       expect(() => repository.songs.add(song), throwsUnsupportedError);
     });
 
-    test('handles mixed file types in same directory', () async {
+    test('handles mixed MusicXML file types in same directory', () async {
       final songDir = Directory('${tempDir.path}/MixedSong');
       await songDir.create();
 
-      await File('${songDir.path}/page1.pdf').writeAsString('test');
-      await File('${songDir.path}/page2.png').writeAsString('test');
-      await File('${songDir.path}/page3.svg').writeAsString('test');
+      await File('${songDir.path}/page1.musicxml').writeAsString('test');
+      await File('${songDir.path}/page2.xml').writeAsString('test');
+      await File('${songDir.path}/page3.mxl').writeAsString('test');
 
       final songs = await repository.loadFromDirectory(tempDir.path);
 
       expect(songs.first.pageCount, 3);
       final extensions = songs.first.pages.map((p) => p.extension).toSet();
-      expect(extensions, containsAll(['.pdf', '.png', '.svg']));
+      expect(extensions, containsAll(['.musicxml', '.xml', '.mxl']));
     });
   });
 }

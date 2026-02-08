@@ -6,28 +6,28 @@ void main() {
     test('creates from file info correctly', () {
       final now = DateTime.now();
       final file = SheetMusicFile.fromFileInfo(
-        path: '/music/song.pdf',
-        name: 'song.pdf',
+        path: '/music/song.musicxml',
+        name: 'song.musicxml',
         sizeBytes: 1024,
         lastModified: now,
       );
 
-      expect(file.name, 'song.pdf');
-      expect(file.path, '/music/song.pdf');
+      expect(file.name, 'song.musicxml');
+      expect(file.path, '/music/song.musicxml');
       expect(file.sizeBytes, 1024);
       expect(file.lastModified, now);
-      expect(file.extension, '.pdf');
+      expect(file.extension, '.musicxml');
     });
 
     test('handles uppercase extensions', () {
       final file = SheetMusicFile.fromFileInfo(
-        path: '/music/song.PDF',
-        name: 'song.PDF',
+        path: '/music/song.MUSICXML',
+        name: 'song.MUSICXML',
         sizeBytes: 1024,
         lastModified: DateTime.now(),
       );
 
-      expect(file.extension, '.pdf');
+      expect(file.extension, '.musicxml');
     });
 
     test('handles files without extension', () {
@@ -42,28 +42,27 @@ void main() {
     });
 
     group('isSupportedExtension', () {
-      test('returns true for pdf', () {
-        expect(SheetMusicFile.isSupportedExtension('.pdf'), true);
-      });
-
-      test('returns true for png', () {
-        expect(SheetMusicFile.isSupportedExtension('.png'), true);
-      });
-
-      test('returns true for svg', () {
-        expect(SheetMusicFile.isSupportedExtension('.svg'), true);
-      });
-
       test('returns true for musicxml', () {
         expect(SheetMusicFile.isSupportedExtension('.musicxml'), true);
       });
 
+      test('returns true for xml', () {
+        expect(SheetMusicFile.isSupportedExtension('.xml'), true);
+      });
+
+      test('returns true for mxl', () {
+        expect(SheetMusicFile.isSupportedExtension('.mxl'), true);
+      });
+
       test('returns true for uppercase extensions', () {
-        expect(SheetMusicFile.isSupportedExtension('.PDF'), true);
-        expect(SheetMusicFile.isSupportedExtension('.PNG'), true);
+        expect(SheetMusicFile.isSupportedExtension('.MUSICXML'), true);
+        expect(SheetMusicFile.isSupportedExtension('.XML'), true);
       });
 
       test('returns false for unsupported extensions', () {
+        expect(SheetMusicFile.isSupportedExtension('.pdf'), false);
+        expect(SheetMusicFile.isSupportedExtension('.png'), false);
+        expect(SheetMusicFile.isSupportedExtension('.svg'), false);
         expect(SheetMusicFile.isSupportedExtension('.txt'), false);
         expect(SheetMusicFile.isSupportedExtension('.jpg'), false);
         expect(SheetMusicFile.isSupportedExtension('.doc'), false);
@@ -74,47 +73,47 @@ void main() {
       test('toJson creates correct map', () {
         final now = DateTime(2024, 1, 15, 10, 30, 0);
         final file = SheetMusicFile(
-          name: 'song.pdf',
-          path: '/music/song.pdf',
+          name: 'song.musicxml',
+          path: '/music/song.musicxml',
           sizeBytes: 2048,
           lastModified: now,
-          extension: '.pdf',
+          extension: '.musicxml',
         );
 
         final json = file.toJson();
 
-        expect(json['name'], 'song.pdf');
-        expect(json['path'], '/music/song.pdf');
+        expect(json['name'], 'song.musicxml');
+        expect(json['path'], '/music/song.musicxml');
         expect(json['sizeBytes'], 2048);
         expect(json['lastModified'], '2024-01-15T10:30:00.000');
-        expect(json['extension'], '.pdf');
+        expect(json['extension'], '.musicxml');
       });
 
       test('fromJson creates correct object', () {
         final json = {
-          'name': 'song.pdf',
-          'path': '/music/song.pdf',
+          'name': 'song.musicxml',
+          'path': '/music/song.musicxml',
           'sizeBytes': 2048,
           'lastModified': '2024-01-15T10:30:00.000',
-          'extension': '.pdf',
+          'extension': '.musicxml',
         };
 
         final file = SheetMusicFile.fromJson(json);
 
-        expect(file.name, 'song.pdf');
-        expect(file.path, '/music/song.pdf');
+        expect(file.name, 'song.musicxml');
+        expect(file.path, '/music/song.musicxml');
         expect(file.sizeBytes, 2048);
         expect(file.lastModified, DateTime(2024, 1, 15, 10, 30, 0));
-        expect(file.extension, '.pdf');
+        expect(file.extension, '.musicxml');
       });
 
       test('roundtrip preserves data', () {
         final original = SheetMusicFile(
-          name: 'test.png',
-          path: '/path/to/test.png',
+          name: 'test.musicxml',
+          path: '/path/to/test.musicxml',
           sizeBytes: 4096,
           lastModified: DateTime(2024, 6, 1, 12, 0, 0),
-          extension: '.png',
+          extension: '.musicxml',
         );
 
         final restored = SheetMusicFile.fromJson(original.toJson());
@@ -129,27 +128,27 @@ void main() {
 
     test('equality is based on path', () {
       final file1 = SheetMusicFile(
-        name: 'song.pdf',
-        path: '/music/song.pdf',
+        name: 'song.musicxml',
+        path: '/music/song.musicxml',
         sizeBytes: 1024,
         lastModified: DateTime.now(),
-        extension: '.pdf',
+        extension: '.musicxml',
       );
 
       final file2 = SheetMusicFile(
-        name: 'song.pdf',
-        path: '/music/song.pdf',
+        name: 'song.musicxml',
+        path: '/music/song.musicxml',
         sizeBytes: 2048,
         lastModified: DateTime.now().add(const Duration(days: 1)),
-        extension: '.pdf',
+        extension: '.musicxml',
       );
 
       final file3 = SheetMusicFile(
-        name: 'other.pdf',
-        path: '/music/other.pdf',
+        name: 'other.musicxml',
+        path: '/music/other.musicxml',
         sizeBytes: 1024,
         lastModified: DateTime.now(),
-        extension: '.pdf',
+        extension: '.musicxml',
       );
 
       expect(file1 == file2, true);

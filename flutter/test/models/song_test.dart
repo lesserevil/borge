@@ -9,8 +9,16 @@ void main() {
         id: 'abc123',
         name: 'Test Song',
         pages: [
-          const Page(pageNumber: 1, path: '/p1.pdf', extension: '.pdf'),
-          const Page(pageNumber: 2, path: '/p2.pdf', extension: '.pdf'),
+          const Page(
+            pageNumber: 1,
+            path: '/p1.musicxml',
+            extension: '.musicxml',
+          ),
+          const Page(
+            pageNumber: 2,
+            path: '/p2.musicxml',
+            extension: '.musicxml',
+          ),
         ],
       );
 
@@ -25,15 +33,27 @@ void main() {
         id: 'test',
         name: 'Test',
         pages: [
-          const Page(pageNumber: 1, path: '/p1.pdf', extension: '.pdf'),
-          const Page(pageNumber: 2, path: '/p2.pdf', extension: '.pdf'),
-          const Page(pageNumber: 3, path: '/p3.pdf', extension: '.pdf'),
+          const Page(
+            pageNumber: 1,
+            path: '/p1.musicxml',
+            extension: '.musicxml',
+          ),
+          const Page(
+            pageNumber: 2,
+            path: '/p2.musicxml',
+            extension: '.musicxml',
+          ),
+          const Page(
+            pageNumber: 3,
+            path: '/p3.musicxml',
+            extension: '.musicxml',
+          ),
         ],
       );
 
-      expect(song.getPage(1)?.path, '/p1.pdf');
-      expect(song.getPage(2)?.path, '/p2.pdf');
-      expect(song.getPage(3)?.path, '/p3.pdf');
+      expect(song.getPage(1)?.path, '/p1.musicxml');
+      expect(song.getPage(2)?.path, '/p2.musicxml');
+      expect(song.getPage(3)?.path, '/p3.musicxml');
     });
 
     test('getPage returns null for invalid page numbers', () {
@@ -41,7 +61,11 @@ void main() {
         id: 'test',
         name: 'Test',
         pages: [
-          const Page(pageNumber: 1, path: '/p1.pdf', extension: '.pdf'),
+          const Page(
+            pageNumber: 1,
+            path: '/p1.musicxml',
+            extension: '.musicxml',
+          ),
         ],
       );
 
@@ -52,11 +76,7 @@ void main() {
     });
 
     test('empty song has no pages', () {
-      final song = Song(
-        id: 'empty',
-        name: 'Empty Song',
-        pages: [],
-      );
+      final song = Song(id: 'empty', name: 'Empty Song', pages: []);
 
       expect(song.pageCount, 0);
       expect(song.hasPages, false);
@@ -68,7 +88,11 @@ void main() {
           id: 'song1',
           name: 'My Song',
           pages: [
-            const Page(pageNumber: 1, path: '/p1.pdf', extension: '.pdf'),
+            const Page(
+              pageNumber: 1,
+              path: '/p1.musicxml',
+              extension: '.musicxml',
+            ),
           ],
           directoryPath: '/music/my-song',
         );
@@ -83,11 +107,7 @@ void main() {
       });
 
       test('toJson omits null directoryPath', () {
-        final song = Song(
-          id: 'song1',
-          name: 'My Song',
-          pages: [],
-        );
+        final song = Song(id: 'song1', name: 'My Song', pages: []);
 
         final json = song.toJson();
 
@@ -99,8 +119,8 @@ void main() {
           'id': 'song1',
           'name': 'My Song',
           'pages': [
-            {'page': 1, 'path': '/p1.pdf', 'extension': '.pdf'},
-            {'page': 2, 'path': '/p2.pdf', 'extension': '.pdf'},
+            {'page': 1, 'path': '/p1.musicxml', 'extension': '.musicxml'},
+            {'page': 2, 'path': '/p2.musicxml', 'extension': '.musicxml'},
           ],
           'directoryPath': '/music',
         };
@@ -118,8 +138,16 @@ void main() {
           id: 'roundtrip',
           name: 'Roundtrip Song',
           pages: [
-            const Page(pageNumber: 1, path: '/a.pdf', extension: '.pdf'),
-            const Page(pageNumber: 2, path: '/b.pdf', extension: '.pdf'),
+            const Page(
+              pageNumber: 1,
+              path: '/a.musicxml',
+              extension: '.musicxml',
+            ),
+            const Page(
+              pageNumber: 2,
+              path: '/b.musicxml',
+              extension: '.musicxml',
+            ),
           ],
           directoryPath: '/test',
         );
@@ -148,50 +176,66 @@ void main() {
     test('creates with required fields', () {
       const page = Page(
         pageNumber: 5,
-        path: '/music/song/page5.png',
-        extension: '.png',
+        path: '/music/song/page5.musicxml',
+        extension: '.musicxml',
       );
 
       expect(page.pageNumber, 5);
-      expect(page.path, '/music/song/page5.png');
-      expect(page.extension, '.png');
+      expect(page.path, '/music/song/page5.musicxml');
+      expect(page.extension, '.musicxml');
     });
 
     group('JSON serialization', () {
       test('toJson creates correct structure', () {
         const page = Page(
           pageNumber: 3,
-          path: '/test.pdf',
-          extension: '.pdf',
+          path: '/test.musicxml',
+          extension: '.musicxml',
         );
 
         final json = page.toJson();
 
         expect(json['page'], 3);
-        expect(json['path'], '/test.pdf');
-        expect(json['extension'], '.pdf');
+        expect(json['path'], '/test.musicxml');
+        expect(json['extension'], '.musicxml');
       });
 
       test('fromJson creates correct object', () {
         final json = {
           'page': 7,
-          'path': '/page7.svg',
-          'extension': '.svg',
+          'path': '/page7.musicxml',
+          'extension': '.musicxml',
         };
 
         final page = Page.fromJson(json);
 
         expect(page.pageNumber, 7);
-        expect(page.path, '/page7.svg');
-        expect(page.extension, '.svg');
+        expect(page.path, '/page7.musicxml');
+        expect(page.extension, '.musicxml');
       });
     });
 
     test('equality is based on pageNumber and path', () {
-      const page1 = Page(pageNumber: 1, path: '/a.pdf', extension: '.pdf');
-      const page2 = Page(pageNumber: 1, path: '/a.pdf', extension: '.pdf');
-      const page3 = Page(pageNumber: 2, path: '/a.pdf', extension: '.pdf');
-      const page4 = Page(pageNumber: 1, path: '/b.pdf', extension: '.pdf');
+      const page1 = Page(
+        pageNumber: 1,
+        path: '/a.musicxml',
+        extension: '.musicxml',
+      );
+      const page2 = Page(
+        pageNumber: 1,
+        path: '/a.musicxml',
+        extension: '.musicxml',
+      );
+      const page3 = Page(
+        pageNumber: 2,
+        path: '/a.musicxml',
+        extension: '.musicxml',
+      );
+      const page4 = Page(
+        pageNumber: 1,
+        path: '/b.musicxml',
+        extension: '.musicxml',
+      );
 
       expect(page1 == page2, true);
       expect(page1 == page3, false);
