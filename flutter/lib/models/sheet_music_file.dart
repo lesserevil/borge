@@ -12,7 +12,7 @@ class SheetMusicFile {
   /// The last modified timestamp.
   final DateTime lastModified;
 
-  /// The file extension (e.g., '.pdf', '.png').
+  /// The file extension (e.g., '.musicxml', '.xml').
   final String extension;
 
   const SheetMusicFile({
@@ -25,7 +25,7 @@ class SheetMusicFile {
 
   /// Returns true if this file type is supported.
   static bool isSupportedExtension(String ext) {
-    const supported = {'.pdf', '.png', '.svg', '.musicxml'};
+    const supported = {'.musicxml', '.xml', '.mxl'};
     return supported.contains(ext.toLowerCase());
   }
 
@@ -50,21 +50,21 @@ class SheetMusicFile {
 
   /// Converts to JSON map.
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'path': path,
-        'sizeBytes': sizeBytes,
-        'lastModified': lastModified.toIso8601String(),
-        'extension': extension,
-      };
+    'name': name,
+    'path': path,
+    'sizeBytes': sizeBytes,
+    'lastModified': lastModified.toIso8601String(),
+    'extension': extension,
+  };
 
   /// Creates from JSON map.
   factory SheetMusicFile.fromJson(Map<String, dynamic> json) => SheetMusicFile(
-        name: json['name'] as String,
-        path: json['path'] as String,
-        sizeBytes: json['sizeBytes'] as int,
-        lastModified: DateTime.parse(json['lastModified'] as String),
-        extension: json['extension'] as String,
-      );
+    name: json['name'] as String,
+    path: json['path'] as String,
+    sizeBytes: json['sizeBytes'] as int,
+    lastModified: DateTime.parse(json['lastModified'] as String),
+    extension: json['extension'] as String,
+  );
 
   @override
   bool operator ==(Object other) =>

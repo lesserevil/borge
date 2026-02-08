@@ -3,13 +3,13 @@ class Page {
   /// The page number (1-indexed).
   final int pageNumber;
 
-  /// Internal page number for multi-page files (e.g., MusicXML, PDF).
+  /// Internal page number for multi-page files (e.g., MusicXML).
   final int? internalPageNumber;
 
   /// Absolute path to the page file.
   final String path;
 
-  /// File extension (e.g., '.pdf', '.png').
+  /// File extension (e.g., '.musicxml', '.xml').
   final String extension;
 
   const Page({
@@ -21,19 +21,19 @@ class Page {
 
   /// Converts to JSON map.
   Map<String, dynamic> toJson() => {
-        'page': pageNumber,
-        'path': path,
-        'extension': extension,
-        if (internalPageNumber != null) 'internalPageNumber': internalPageNumber,
-      };
+    'page': pageNumber,
+    'path': path,
+    'extension': extension,
+    if (internalPageNumber != null) 'internalPageNumber': internalPageNumber,
+  };
 
   /// Creates from JSON map.
   factory Page.fromJson(Map<String, dynamic> json) => Page(
-        pageNumber: json['page'] as int,
-        path: json['path'] as String,
-        extension: json['extension'] as String? ?? '',
-        internalPageNumber: json['internalPageNumber'] as int?,
-      );
+    pageNumber: json['page'] as int,
+    path: json['path'] as String,
+    extension: json['extension'] as String? ?? '',
+    internalPageNumber: json['internalPageNumber'] as int?,
+  );
 
   @override
   bool operator ==(Object other) =>

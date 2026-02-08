@@ -8,7 +8,7 @@ A cross-platform Flutter application for viewing sheet music on tablets, with co
 
 ## Features
 
-- **Flutter App**: Cross-platform sheet music viewer supporting PDF, PNG, SVG, and MusicXML files
+- **Flutter App**: Cross-platform sheet music viewer supporting MusicXML files
 - **On-demand Scanning**: Scan local directories for sheet music files without constant monitoring
 - **Pebble Companion**: Navigate songs and pages using Pebble watch buttons (up, down, select, back)
 - **BLE Communication**: Robust Bluetooth Low Energy protocol with acknowledgments and haptic feedback

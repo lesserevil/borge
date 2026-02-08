@@ -117,46 +117,50 @@ class AppState extends ChangeNotifier {
   }
 
   /// Expand the current document into multiple logical pages.
-  /// Used for multi-page MusicXML or PDF files identified at runtime.
+  /// Used for multi-page MusicXML files identified at runtime.
   void expandDocument(int internalPageCount) {
     final song = _currentSong;
     if (song == null || song.pages.isEmpty) return;
-    
+
     // We only support expanding songs that consist of a single source file.
     // If the song has different paths for different pages, it's a true multi-file song.
     final firstPath = song.pages.first.path;
     final isSingleSource = song.pages.every((p) => p.path == firstPath);
-    
+
     if (!isSingleSource) {
-      debugPrint('Song ${song.name} has multiple source files, skipping expansion.');
+      debugPrint(
+        'Song ${song.name} has multiple source files, skipping expansion.',
+      );
       return;
     }
 
     final currentPage = song.pages[0]; // Use the first page as template
     final newPages = <Page>[];
     for (var i = 1; i <= internalPageCount; i++) {
-      newPages.add(Page(
-        pageNumber: i,
-        path: currentPage.path,
-        extension: currentPage.extension,
-        internalPageNumber: i,
-      ));
+      newPages.add(
+        Page(
+          pageNumber: i,
+          path: currentPage.path,
+          extension: currentPage.extension,
+          internalPageNumber: i,
+        ),
+      );
     }
-    
+
     _currentSong = Song(
       id: song.id,
       name: song.name,
       pages: newPages,
       directoryPath: song.directoryPath,
     );
-    
+
     // Keep current page index within bounds if page count decreased
     if (_currentPageIndex >= internalPageCount) {
       _currentPageIndex = internalPageCount - 1;
     }
-    
+
     debugPrint('Expanded ${song.name} to $internalPageCount pages.');
-    
+
     // Defer notifyListeners with delay to ensure all OSMD operations complete
     Future.delayed(const Duration(milliseconds: 200), () => notifyListeners());
   }
@@ -239,8 +243,14 @@ class AppState extends ChangeNotifier {
   }
 
   /// Add a Google Drive folder and rescan.
-  Future<MusicFolder?> addGoogleDriveFolder(String folderId, String folderName) async {
-    final folder = await _musicLibrary.addGoogleDriveFolder(folderId, folderName);
+  Future<MusicFolder?> addGoogleDriveFolder(
+    String folderId,
+    String folderName,
+  ) async {
+    final folder = await _musicLibrary.addGoogleDriveFolder(
+      folderId,
+      folderName,
+    );
     if (folder != null) {
       await rescanLibrary();
     }
@@ -320,7 +330,8 @@ class AppState extends ChangeNotifier {
 
     try {
       final assetManifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      final musicAssets = assetManifest.listAssets()
+      final musicAssets = assetManifest
+          .listAssets()
           .where((key) => key.startsWith('assets/music/'))
           .toList();
 
