@@ -324,15 +324,21 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
-  /// Load songs from the assets/music directory.
+  /// Asset directories to search for bundled music.
+  static const _assetMusicDirs = ['assets/music/'];
+  static const _assetMusicDirsWeb = ['assets/music/', 'assets/music-web/'];
+
+  /// Load songs from bundled asset directories.
+  /// On web, also loads from assets/music-web/ (web-only bundled content).
   Future<List<Song>> _loadSongsFromAssets() async {
     final songs = <Song>[];
 
     try {
       final assetManifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final dirs = kIsWeb ? _assetMusicDirsWeb : _assetMusicDirs;
       final musicAssets = assetManifest
           .listAssets()
-          .where((key) => key.startsWith('assets/music/'))
+          .where((key) => dirs.any((dir) => key.startsWith(dir)))
           .toList();
 
       debugPrint('Found ${musicAssets.length} music assets: $musicAssets');

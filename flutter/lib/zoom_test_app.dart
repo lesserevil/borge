@@ -55,7 +55,7 @@ class _ZoomTestHomeScreenState extends State<ZoomTestHomeScreen> {
 
   Future<void> _loadTestData() async {
     try {
-      final data = await rootBundle.loadString('assets/music/Echigo-Jishi.musicxml');
+      final data = await rootBundle.loadString('assets/music-web/Echigo-Jishi.musicxml');
       setState(() {
         _musicXml = data;
         _loading = false;

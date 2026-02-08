@@ -39,7 +39,7 @@ build-web: deps
 .PHONY: run-web
 run-web: deps
 	@echo "🌐 Serving Flutter app on http://localhost:8080..."
-	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0"
+	@$(DOCKER_COMPOSE) run --rm -p 8080:8080 flutter bash -c "cd flutter && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0"
 
 .PHONY: build-apk
 build-apk: deps
