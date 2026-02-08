@@ -1,0 +1,38 @@
+# Build artifacts
+flutter/build/
+flutter/.dart_tool/
+flutter/.packages
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+
+# Platform builds
+flutter/android/.gradle/
+flutter/android/app/build/
+
+# fvm local
+flutter/.fvm/flutter_sdk
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Git
+.git/
+.gitignore
+
+# Pebble build
+pebble/build/
+
+# Docker (prevent recursive context)
+.dockerignore
+Dockerfile
+Dockerfile.pebble
+docker-compose.yml
+
+# Sisyphus working files
+.sisyphus/
+
+# OS files
+.DS_Store
+Thumbs.db
