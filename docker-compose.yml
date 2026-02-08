@@ -1,0 +1,28 @@
+services:
+  flutter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+      - flutter-pub-cache:/root/.pub-cache
+      - flutter-gradle-cache:/root/.gradle
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+  pebble:
+    build:
+      context: .
+      dockerfile: Dockerfile.pebble
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/pebble
+    stdin_open: true
+    tty: true
+
+volumes:
+  flutter-pub-cache:
+    name: borge-pub-cache
+  flutter-gradle-cache:
+    name: borge-gradle-cache
