@@ -1,47 +1,22 @@
 [project]
 name = "borge-tools"
 version = "0.1.0"
-description = "PDF to MusicXML conversion tools for Borge sheet music viewer"
+description = "MusicXML utilities for Borge sheet music viewer"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 
-dependencies = [
-    # PDF processing - extract images from PDF pages
-    "pymupdf>=1.24.0",
-    
-    # MusicXML file merging (installed from GitHub)
-    "relieur @ git+https://github.com/papoteur-mga/relieur.git",
-]
+dependencies = []
 
 [project.optional-dependencies]
-# GPU support for HOMR (requires CUDA)
-gpu = [
-    "homr",
-    "onnxruntime-gpu>=1.16.0",
-]
-
-# CPU-only HOMR
-cpu = [
-    "homr",
-]
-
 dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
 ]
 
-[project.scripts]
-pdf2musicxml = "borge_tools.pdf2musicxml:main"
-img2musicxml = "borge_tools.img2musicxml:main"
-batch-convert = "borge_tools.batch_convert:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["borge_tools"]
