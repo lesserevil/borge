@@ -190,3 +190,56 @@ clean: clean-flutter-native clean-flutter-apk
 .PHONY: package
 package: flutter-build-apk
 	@echo "📦 All packaged."
+
+# ----------------------------------------------------------------------
+# Docker Targets (Issue #3)
+# ----------------------------------------------------------------------
+
+DOCKER_COMPOSE := docker compose
+DOCKER_FLUTTER := $(DOCKER_COMPOSE) run --rm flutter
+DOCKER_PEBBLE  := $(DOCKER_COMPOSE) run --rm pebble
+
+.PHONY: docker-build
+docker-build:
+	@echo "🐳 Building Docker images..."
+	@$(DOCKER_COMPOSE) build
+
+.PHONY: docker-deps
+docker-deps: docker-build
+	@echo "⬇️  Installing dependencies (in container)..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get"
+
+.PHONY: docker-test
+docker-test: docker-deps
+	@echo "🧪 Running tests (in container)..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter test"
+
+.PHONY: docker-build-linux
+docker-build-linux: docker-deps
+	@echo "🔨 Building Linux app (in container)..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build linux --release"
+
+.PHONY: docker-build-web
+docker-build-web: docker-deps
+	@echo "🌐 Building web app (in container)..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build web --release"
+
+.PHONY: docker-build-apk
+docker-build-apk: docker-deps
+	@echo "📱 Building Android APK (in container)..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build apk --release"
+
+.PHONY: docker-pebble
+docker-pebble:
+	@echo "⌚ Building Pebble firmware (in container)..."
+	@$(DOCKER_PEBBLE) pebble build
+
+.PHONY: docker-shell
+docker-shell:
+	@echo "🐚 Opening shell in Flutter container..."
+	@$(DOCKER_FLUTTER) bash
+
+.PHONY: docker-clean
+docker-clean:
+	@echo "🧹 Cleaning Docker resources..."
+	@$(DOCKER_COMPOSE) down --rmi local --volumes --remove-orphans

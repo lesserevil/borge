@@ -45,6 +45,36 @@ fvm flutter run
 
 > **Note**: You can also use `flutter` directly if you have Flutter 3.38.5 installed globally, but fvm is recommended for consistent versioning.
 
+### Docker Development (Recommended)
+
+No need to install Flutter, Java, or any other dependencies. Just Docker.
+
+```bash
+# Build the development container
+make docker-build
+
+# Run tests
+make docker-test
+
+# Build Linux desktop app
+make docker-build-linux
+
+# Build web app
+make docker-build-web
+
+# Build Android APK
+make docker-build-apk
+
+# Build Pebble firmware
+make docker-pebble
+
+# Open interactive shell in container
+make docker-shell
+```
+
+Your source code is volume-mounted — edit files with your IDE on the host,
+build and test inside the container.
+
 ### Pebble App Setup
 
 See [pebble/README.md](pebble/README.md) for detailed setup instructions.
