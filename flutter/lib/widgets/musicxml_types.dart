@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 /// Information about the loaded score.
 class MusicXmlScoreInfo {
   final String title;

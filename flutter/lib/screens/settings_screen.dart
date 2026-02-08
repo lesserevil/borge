@@ -1006,6 +1006,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     // Show folder picker dialog
+    if (!context.mounted) return;
     final result = await showDialog(
       context: context,
       builder: (context) => GoogleDriveFolderPickerDialog(
