@@ -10,7 +10,6 @@ import 'package:web/web.dart' as web;
 
 import 'package:flutter/material.dart';
 
-import 'musicxml_web_renderer.dart';
 import 'musicxml_types.dart';
 
 /// Unique ID counter for iframe registration.
