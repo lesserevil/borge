@@ -134,7 +134,7 @@ class _ZoomTestHomeScreenState extends State<ZoomTestHomeScreen> {
                     ),
                       Container(
                         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         child: Row(
                           children: [
                             const Icon(Icons.pages_outlined),

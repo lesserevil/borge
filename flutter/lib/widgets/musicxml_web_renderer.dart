@@ -7,8 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'musicxml_types.dart';
-// import 'musicxml_web_renderer_html.dart'; // Avoid importing web-only file in native
-import '../services/musicxml_splitter.dart';
 
 /// A widget that renders MusicXML content using OpenSheetMusicDisplay via WebView.
 ///
