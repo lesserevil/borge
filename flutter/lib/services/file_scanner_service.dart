@@ -17,13 +17,13 @@ class FileScanException implements Exception {
 
 /// Service for scanning directories for sheet music files.
 class FileScannerService {
-  /// Supported file extensions for sheet music (MusicXML focus).
+  /// Supported file extensions for sheet music.
   static const supportedExtensions = {'.musicxml', '.xml', '.mxl'};
 
   /// Scans a directory for sheet music files.
   ///
   /// Returns a list of [SheetMusicFile] objects for files matching
-  /// supported extensions (.pdf, .png, .svg, .musicxml).
+  /// supported MusicXML extensions (.musicxml, .xml, .mxl).
   ///
   /// Throws [FileScanException] if the directory doesn't exist or
   /// cannot be accessed.
