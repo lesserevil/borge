@@ -51,25 +51,31 @@ No need to install Flutter, Java, or any other dependencies. Just Docker.
 
 ```bash
 # Build the development container
-make docker-build
+make images
+
+# Install dependencies
+make deps
 
 # Run tests
-make docker-test
+make test
 
 # Build Linux desktop app
-make docker-build-linux
+make build
 
 # Build web app
-make docker-build-web
+make build-web
 
 # Build Android APK
-make docker-build-apk
+make build-apk
 
 # Build Pebble firmware
-make docker-pebble
+make pebble
 
 # Open interactive shell in container
-make docker-shell
+make shell
+
+# Clean up Docker resources
+make clean
 ```
 
 Your source code is volume-mounted — edit files with your IDE on the host,
