@@ -65,18 +65,18 @@ build-apk: $(APK_OUTPUT)
 
 APK_PATH := $(APK_OUTPUT)
 
-# ADB_HOST: set to <ip>:<port> to install over TCP (direct device or adb bridge).
-# Leave unset to install via USB.
+# ADB_HOST: set to <ip>:<port> to install over TCP via adb connect.
+# Leave unset to install via USB on the host.
 ADB_HOST ?=
 
 .PHONY: install-apk
 install-apk: build-apk
 ifdef ADB_HOST
 	@echo "📲 Installing APK on remote device $(ADB_HOST)..."
-	@$(DOCKER_FLUTTER) bash -c "adb connect $(ADB_HOST) && adb -s $(ADB_HOST) wait-for-device && adb -s $(ADB_HOST) install -r $(APK_PATH)"
+	@adb connect $(ADB_HOST) && adb -s $(ADB_HOST) wait-for-device && adb -s $(ADB_HOST) install -r $(APK_PATH)
 else
 	@echo "📲 Installing APK on USB-connected device..."
-	@$(DOCKER_FLUTTER_USB) bash -c "adb wait-for-device && adb install -r $(APK_PATH)"
+	@adb wait-for-device && adb install -r $(APK_PATH)
 endif
 	@echo "✅ APK installed."
 
@@ -106,6 +106,28 @@ clean:
 .PHONY: package
 package: $(APK_OUTPUT)
 	@echo "📦 All packaged."
+
+# ----------------------------------------------------------------------
+# Signing & Secrets
+# ----------------------------------------------------------------------
+
+KEY_PROPERTIES := $(FLUTTER_DIR)/android/key.properties
+
+# Generate key.properties from .env
+$(KEY_PROPERTIES): .env
+	@echo "🔑 Generating key.properties from .env..."
+	@set -a && . ./.env && set +a && \
+	 for var in KEYSTORE_FILE KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do \
+	   eval "val=\$$$$var"; \
+	   if [ -z "$$val" ]; then echo "ERROR: $$var is not set in .env" >&2; exit 1; fi; \
+	 done && \
+	 cp "$$KEYSTORE_FILE" $(FLUTTER_DIR)/android/app/upload-keystore.jks && \
+	 printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=app/upload-keystore.jks\n' \
+	   "$$KEYSTORE_PASSWORD" "$$KEY_PASSWORD" "$$KEY_ALIAS" > $@
+	@echo "✅ key.properties written."
+
+.PHONY: key-properties
+key-properties: $(KEY_PROPERTIES)
 
 # ----------------------------------------------------------------------
 # Pebble & Services (Legacy/Dev Targets)

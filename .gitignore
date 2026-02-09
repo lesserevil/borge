@@ -48,3 +48,6 @@ tools/.venv/
 
 # oh-my-opencode
 .sisyphus
+
+# Secrets
+.env

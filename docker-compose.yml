@@ -7,6 +7,7 @@ services:
       - .:/workspace
       - flutter-pub-cache:/root/.pub-cache
       - flutter-gradle-cache:/root/.gradle
+      - ${HOME}/.android:/root/.android
     working_dir: /workspace
     stdin_open: true
     tty: true
@@ -19,6 +20,7 @@ services:
       - .:/workspace
       - flutter-pub-cache:/root/.pub-cache
       - flutter-gradle-cache:/root/.gradle
+      - ${HOME}/.android:/root/.android
       - /dev/bus/usb:/dev/bus/usb
     working_dir: /workspace
     privileged: true

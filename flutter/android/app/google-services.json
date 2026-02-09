@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1040928831381",
+    "project_id": "borge-music-viewer",
+    "storage_bucket": "borge-music-viewer.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1040928831381:android:placeholder",
+        "android_client_info": {
+          "package_name": "com.lesserevil.borge"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1040928831381-oakroam1ea812jd1a58bsgd9u9ob0jv9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
