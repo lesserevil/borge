@@ -389,6 +389,7 @@
          * Get the bounding box of a measure in pixel coordinates
          * relative to its page div container.
          * Uses the DOM: .vf-measure elements with id matching the measure number.
+         * Adds padding to capture annotations drawn near measure edges.
          * Returns {x, y, w, h} or null if not found.
          */
         function getMeasureBBox(measureNumber, pageIndex) {
@@ -402,11 +403,15 @@
             const measureRect = measureEl.getBoundingClientRect();
             const pageRect = pageDiv.getBoundingClientRect();
 
+            // Expand bbox by 25% on each side so edge annotations stay in 0-1 range
+            const padX = measureRect.width * 0.25;
+            const padY = measureRect.height * 0.25;
+
             return {
-                x: measureRect.left - pageRect.left,
-                y: measureRect.top - pageRect.top,
-                w: measureRect.width,
-                h: measureRect.height,
+                x: (measureRect.left - pageRect.left) - padX,
+                y: (measureRect.top - pageRect.top) - padY,
+                w: measureRect.width + padX * 2,
+                h: measureRect.height + padY * 2,
             };
         }
 
