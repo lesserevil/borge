@@ -45,3 +45,6 @@ tools/.venv/
 .fvm/
 .pebble_emu.pid
 .beads/last-touched
+
+# oh-my-opencode
+.sisyphus
