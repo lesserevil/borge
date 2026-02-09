@@ -29,6 +29,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
   bool _annotationMode = false;
   bool _canUndo = false;
   bool _canRedo = false;
+  bool _isRendering = false;
   final GlobalKey _rendererKey = GlobalKey();
 
   // Annotation persistence
@@ -91,11 +92,13 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         widget.appState.goToPage(0);
       } else if (event.logicalKey == LogicalKeyboardKey.end) {
         widget.appState.goToPage(widget.appState.totalPages - 1);
-      } else if (event.logicalKey == LogicalKeyboardKey.equal ||
-          event.logicalKey == LogicalKeyboardKey.add) {
+      } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.equal ||
+          event.logicalKey == LogicalKeyboardKey.add)) {
+        setState(() { _isRendering = true; });
         widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
-      } else if (event.logicalKey == LogicalKeyboardKey.minus ||
-          event.logicalKey == LogicalKeyboardKey.underscore) {
+      } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.minus ||
+          event.logicalKey == LogicalKeyboardKey.underscore)) {
+        setState(() { _isRendering = true; });
         widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         Navigator.of(context).pop();
@@ -168,14 +171,20 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
             const VerticalDivider(width: 1, color: Colors.white24),
             IconButton(
               icon: const Icon(Icons.zoom_out),
-              onPressed: _annotationMode ? null : () => widget.appState.zoom =
-                  (widget.appState.zoom - 0.1).clamp(0.5, 3.0),
+              onPressed: (_annotationMode || _isRendering) ? null : () {
+                setState(() { _isRendering = true; });
+                widget.appState.zoom =
+                    (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
+              },
               tooltip: 'Zoom Out',
             ),
             IconButton(
               icon: const Icon(Icons.zoom_in),
-              onPressed: _annotationMode ? null : () => widget.appState.zoom =
-                  (widget.appState.zoom + 0.1).clamp(0.5, 3.0),
+              onPressed: (_annotationMode || _isRendering) ? null : () {
+                setState(() { _isRendering = true; });
+                widget.appState.zoom =
+                    (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
+              },
               tooltip: 'Zoom In',
             ),
             ListenableBuilder(
@@ -231,6 +240,11 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                       onAnnotationRemoved: _handleAnnotationRemoved,
                       onAnnotationsCleared: _handleAnnotationsCleared,
                       onScoreLoaded: _loadSavedAnnotations,
+                      onRenderComplete: () {
+                        if (_isRendering) {
+                          setState(() { _isRendering = false; });
+                        }
+                      },
                     ),
                   ),
                   // Navigation overlay
@@ -450,6 +464,7 @@ class _SheetMusicPage extends StatefulWidget {
   final OnAnnotationRemoved? onAnnotationRemoved;
   final OnAnnotationsCleared? onAnnotationsCleared;
   final VoidCallback? onScoreLoaded;
+  final VoidCallback? onRenderComplete;
 
   const _SheetMusicPage({
     super.key,
@@ -463,6 +478,7 @@ class _SheetMusicPage extends StatefulWidget {
     this.onAnnotationRemoved,
     this.onAnnotationsCleared,
     this.onScoreLoaded,
+    this.onRenderComplete,
   });
 
   @override
@@ -654,6 +670,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
 
         // Load saved annotations after score is rendered
         widget.onScoreLoaded?.call();
+        widget.onRenderComplete?.call();
       },
       onError: (message, type) {
         debugPrint('MusicXML render error ($type): $message');
