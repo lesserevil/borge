@@ -4,8 +4,12 @@ import 'dart:io' as io;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:uuid/uuid.dart';
 
+import '../models/annotation.dart';
 import '../models/models.dart' as models;
+import '../services/annotation_exporter.dart';
+import '../services/annotation_repository.dart';
 import '../state/app_state.dart';
 import '../widgets/musicxml_platform_renderer.dart';
 
@@ -22,6 +26,16 @@ class SheetMusicViewerScreen extends StatefulWidget {
 class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
   final FocusNode _focusNode = FocusNode();
   Orientation? _lastOrientation;
+  bool _annotationMode = false;
+  bool _canUndo = false;
+  bool _canRedo = false;
+  final GlobalKey _rendererKey = GlobalKey();
+
+  // Annotation persistence
+  final AnnotationRepository _annotationRepo = AnnotationRepository();
+  static const _uuid = Uuid();
+  // Track annotation IDs by measure for undo/removal mapping
+  final Map<int, List<String>> _annotationIdsByMeasure = {};
 
   @override
   void initState() {
@@ -58,6 +72,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
   @override
   void dispose() {
     _focusNode.dispose();
+    _annotationRepo.close();
     super.dispose();
   }
 
@@ -100,6 +115,52 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
           foregroundColor: Colors.white,
           title: Text(widget.appState.currentSong?.name ?? 'Sheet Music'),
           actions: [
+            // Annotation controls
+            if (_annotationMode) ...[
+              IconButton(
+                icon: const Icon(Icons.undo),
+                onPressed: _canUndo
+                    ? () => (_rendererKey.currentState as dynamic)?.undo()
+                    : null,
+                tooltip: 'Undo',
+              ),
+              IconButton(
+                icon: const Icon(Icons.redo),
+                onPressed: _canRedo
+                    ? () => (_rendererKey.currentState as dynamic)?.redo()
+                    : null,
+                tooltip: 'Redo',
+              ),
+              const VerticalDivider(width: 1, color: Colors.white24),
+              // Export/import only on native (requires file system)
+              if (!kIsWeb) ...[
+                IconButton(
+                  icon: const Icon(Icons.file_upload_outlined),
+                  onPressed: _exportAnnotations,
+                  tooltip: 'Export Annotations',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.file_download_outlined),
+                  onPressed: _importAnnotations,
+                  tooltip: 'Import Annotations',
+                ),
+                const VerticalDivider(width: 1, color: Colors.white24),
+              ],
+            ],
+            IconButton(
+              icon: Icon(
+                _annotationMode ? Icons.draw : Icons.draw_outlined,
+                color: _annotationMode ? Colors.amber : null,
+              ),
+              onPressed: () {
+                setState(() {
+                  _annotationMode = !_annotationMode;
+                });
+                (_rendererKey.currentState as dynamic)?.setAnnotationMode(_annotationMode);
+              },
+              tooltip: _annotationMode ? 'Exit Drawing Mode' : 'Drawing Mode',
+            ),
+            const VerticalDivider(width: 1, color: Colors.white24),
             IconButton(
               icon: const Icon(Icons.zoom_out),
               onPressed: () => widget.appState.zoom =
@@ -153,6 +214,17 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                       page: page,
                       songName: widget.appState.currentSong?.name ?? "",
                       appState: widget.appState,
+                      rendererKey: _rendererKey,
+                      onHistoryChanged: (canUndo, canRedo) {
+                        setState(() {
+                          _canUndo = canUndo;
+                          _canRedo = canRedo;
+                        });
+                      },
+                      onAnnotationAdded: _handleAnnotationAdded,
+                      onAnnotationRemoved: _handleAnnotationRemoved,
+                      onAnnotationsCleared: _handleAnnotationsCleared,
+                      onScoreLoaded: _loadSavedAnnotations,
                     ),
                   ),
                   // Navigation overlay
@@ -179,6 +251,159 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
           },
         ),
       ),
+    );
+  }
+
+  // ── Annotation Persistence ──────────────────────────────────────
+
+  String get _currentFileId =>
+      widget.appState.currentSong?.id ??
+      widget.appState.currentPage?.path ??
+      'unknown';
+
+  void _handleAnnotationAdded(AnnotationEvent event) {
+    final id = _uuid.v4();
+    final annotation = Annotation(
+      id: id,
+      fileId: _currentFileId,
+      measureNumber: event.measureNumber,
+      type: AnnotationType.freehand,
+      data: event.svgPath,
+      createdAt: DateTime.now(),
+      x: event.x,
+      y: event.y,
+    );
+
+    _annotationIdsByMeasure
+        .putIfAbsent(event.measureNumber, () => [])
+        .add(id);
+
+    _annotationRepo.insert(annotation);
+    debugPrint('Annotation saved: $id (measure ${event.measureNumber})');
+  }
+
+  void _handleAnnotationRemoved(
+    int pageIndex,
+    int measureNumber,
+    int remaining,
+  ) {
+    final ids = _annotationIdsByMeasure[measureNumber];
+    if (ids != null && ids.isNotEmpty) {
+      final removedId = ids.removeLast();
+      _annotationRepo.delete(removedId);
+      debugPrint('Annotation deleted: $removedId (measure $measureNumber)');
+    }
+  }
+
+  void _handleAnnotationsCleared(int pageIndex) {
+    final fileId = _currentFileId;
+    _annotationRepo.deleteByFileId(fileId);
+    _annotationIdsByMeasure.clear();
+    debugPrint('All annotations cleared for file: $fileId');
+  }
+
+  Future<void> _loadSavedAnnotations() async {
+    if (kIsWeb) return;
+
+    final fileId = _currentFileId;
+    final saved = await _annotationRepo.getByFileId(fileId);
+    if (saved.isEmpty) return;
+
+    // Rebuild the ID tracking map
+    _annotationIdsByMeasure.clear();
+    for (final ann in saved) {
+      _annotationIdsByMeasure
+          .putIfAbsent(ann.measureNumber, () => [])
+          .add(ann.id);
+    }
+
+    // Convert to the format expected by the JS renderer
+    final annotations = saved.map((ann) => <String, dynamic>{
+      'svgPath': ann.data,
+      'measureNumber': ann.measureNumber,
+      'x': ann.x,
+      'y': ann.y,
+      'color': '#FF0000',
+      'width': 2.5,
+    }).toList();
+
+    (_rendererKey.currentState as dynamic)?.loadAnnotations(annotations);
+    debugPrint('Loaded ${saved.length} saved annotations for $fileId');
+  }
+
+  Future<void> _exportAnnotations() async {
+    final page = widget.appState.currentPage;
+    if (page == null || page.path.startsWith('assets/') || page.path.startsWith('demo/')) {
+      _showSnackBar('Cannot export annotations for bundled assets');
+      return;
+    }
+
+    final fileId = _currentFileId;
+    final saved = await _annotationRepo.getByFileId(fileId);
+    if (saved.isEmpty) {
+      _showSnackBar('No annotations to export');
+      return;
+    }
+
+    try {
+      await AnnotationExporter.exportToFile(page.path, saved);
+      _showSnackBar('Exported ${saved.length} annotations');
+    } catch (e) {
+      debugPrint('Export failed: $e');
+      _showSnackBar('Export failed: $e');
+    }
+  }
+
+  Future<void> _importAnnotations() async {
+    final page = widget.appState.currentPage;
+    if (page == null || page.path.startsWith('assets/') || page.path.startsWith('demo/')) {
+      _showSnackBar('Cannot import annotations for bundled assets');
+      return;
+    }
+
+    try {
+      final imported = await AnnotationExporter.importFromFile(page.path);
+      if (imported.isEmpty) {
+        _showSnackBar('No annotation file found');
+        return;
+      }
+
+      // Replace existing annotations in the DB for this file
+      final fileId = _currentFileId;
+      await _annotationRepo.deleteByFileId(fileId);
+      await _annotationRepo.insertAll(imported);
+
+      // Rebuild tracking map and reload into renderer
+      _annotationIdsByMeasure.clear();
+      for (final ann in imported) {
+        _annotationIdsByMeasure
+            .putIfAbsent(ann.measureNumber, () => [])
+            .add(ann.id);
+      }
+
+      // Reload annotations into the renderer
+      (_rendererKey.currentState as dynamic)?.clearAnnotations();
+      final annotationMaps = imported.map((ann) => <String, dynamic>{
+        'svgPath': ann.data,
+        'measureNumber': ann.measureNumber,
+        'x': ann.x,
+        'y': ann.y,
+        'color': '#FF0000',
+        'width': 2.5,
+      }).toList();
+      (_rendererKey.currentState as dynamic)?.loadAnnotations(annotationMaps);
+
+      _showSnackBar('Imported ${imported.length} annotations');
+    } catch (e) {
+      debugPrint('Import failed: $e');
+      _showSnackBar('Import failed: $e');
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
     );
   }
 
@@ -212,12 +437,24 @@ class _SheetMusicPage extends StatefulWidget {
   final models.Page page;
   final String songName;
   final AppState appState;
+  final GlobalKey? rendererKey;
+  final OnHistoryChanged? onHistoryChanged;
+  final OnAnnotationAdded? onAnnotationAdded;
+  final OnAnnotationRemoved? onAnnotationRemoved;
+  final OnAnnotationsCleared? onAnnotationsCleared;
+  final VoidCallback? onScoreLoaded;
 
   const _SheetMusicPage({
     super.key,
     required this.page,
     required this.songName,
     required this.appState,
+    this.rendererKey,
+    this.onHistoryChanged,
+    this.onAnnotationAdded,
+    this.onAnnotationRemoved,
+    this.onAnnotationsCleared,
+    this.onScoreLoaded,
   });
 
   @override
@@ -382,7 +619,9 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
     // Use platform-adaptive MusicXML renderer for high-quality notation
     // Automatically selects WebView (native) or iframe (web) implementation
     return buildMusicXmlRenderer(
-      key: ValueKey('musicxml-${widget.page.path}-$orientation'),
+      key:
+          widget.rendererKey ??
+          ValueKey('musicxml-${widget.page.path}-$orientation'),
       musicXml: _musicXmlContent!,
       backgroundColor: Colors.white,
       options: MusicXmlRenderOptions(
@@ -403,10 +642,17 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
             widget.appState.expandDocument(info.pageCount);
           });
         }
+
+        // Load saved annotations after score is rendered
+        widget.onScoreLoaded?.call();
       },
       onError: (message, type) {
         debugPrint('MusicXML render error ($type): $message');
       },
+      onHistoryChanged: widget.onHistoryChanged,
+      onAnnotationAdded: widget.onAnnotationAdded,
+      onAnnotationRemoved: widget.onAnnotationRemoved,
+      onAnnotationsCleared: widget.onAnnotationsCleared,
     );
   }
 

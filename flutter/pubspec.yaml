@@ -80,6 +80,9 @@ dependencies:
   google_sign_in: ^6.2.1
   extension_google_sign_in_as_googleapis_auth: ^2.0.13
 
+  # SQLite for annotation persistence
+  sqflite: ^2.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

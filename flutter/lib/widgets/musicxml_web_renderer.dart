@@ -43,6 +43,21 @@ class MusicXmlWebRenderer extends StatefulWidget {
   /// Called when the renderer is ready to accept content.
   final OnReady? onReady;
 
+  /// Called when a freehand annotation is added via drawing.
+  final OnAnnotationAdded? onAnnotationAdded;
+
+  /// Called when an annotation is removed.
+  final OnAnnotationRemoved? onAnnotationRemoved;
+
+  /// Called when annotations are cleared.
+  final OnAnnotationsCleared? onAnnotationsCleared;
+
+  /// Called when annotation drawing mode changes.
+  final OnAnnotationModeChanged? onAnnotationModeChanged;
+
+  /// Called when undo/redo history state changes.
+  final OnHistoryChanged? onHistoryChanged;
+
   const MusicXmlWebRenderer({
     super.key,
     this.musicXml,
@@ -52,6 +67,11 @@ class MusicXmlWebRenderer extends StatefulWidget {
     this.onLoaded,
     this.onError,
     this.onReady,
+    this.onAnnotationAdded,
+    this.onAnnotationRemoved,
+    this.onAnnotationsCleared,
+    this.onAnnotationModeChanged,
+    this.onHistoryChanged,
   }) : assert(
          musicXml != null || musicXmlUrl != null,
          'Either musicXml or musicXmlUrl must be provided',
@@ -80,7 +100,7 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   @override
   void didUpdateWidget(MusicXmlWebRenderer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     debugPrint('=== TRACE: didUpdateWidget called');
 
     // Reload if content changed - wait for it to complete
@@ -102,9 +122,12 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
 
     if (oldWidget.options.currentPage != widget.options.currentPage &&
         widget.options.currentPage != null) {
-      debugPrint('=== TRACE: currentPage changed from ${oldWidget.options.currentPage} to ${widget.options.currentPage}');
+      debugPrint(
+        '=== TRACE: currentPage changed from ${oldWidget.options.currentPage} to ${widget.options.currentPage}',
+      );
       // Don't trigger setPage if this is the initial expansion (null -> 1)
-      if (oldWidget.options.currentPage != null || widget.options.currentPage != 1) {
+      if (oldWidget.options.currentPage != null ||
+          widget.options.currentPage != 1) {
         debugPrint('=== TRACE: Calling setPage(${widget.options.currentPage})');
         setPage(widget.options.currentPage!);
       } else {
@@ -122,13 +145,13 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
       final osmdJs = await rootBundle.loadString(
         'assets/js/opensheetmusicdisplay.min.js',
       );
-      
+
       // Replace the script tag with inline JavaScript
       final htmlWithEmbeddedJs = html.replaceFirst(
         '<script src="opensheetmusicdisplay.min.js"></script>',
         '<script>$osmdJs</script>',
       );
-      
+
       setState(() {
         _htmlContent = htmlWithEmbeddedJs;
       });
@@ -178,7 +201,8 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     } catch (e) {
       debugPrint('WebView initialization failed: $e');
       setState(() {
-        _error = 'WebView is not supported on this platform.\n'
+        _error =
+            'WebView is not supported on this platform.\n'
             'Full MusicXML rendering (OSMD) requires Android or iOS.\n'
             'Local development on Linux should use an Android/iOS emulator.';
         _isLoading = false;
@@ -217,13 +241,56 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
             _error = errorMsg;
             _isLoading = false;
           });
-          
+
           // Complete the load operation with error
           if (_loadCompleter != null && !_loadCompleter!.isCompleted) {
             _loadCompleter!.completeError(errorMsg);
           }
-          
+
           widget.onError?.call(errorMsg, errorType);
+          break;
+
+        // ── Annotation Events ──
+        case 'annotationAdded':
+          if (payload != null) {
+            final event = AnnotationEvent.fromJson(payload);
+            widget.onAnnotationAdded?.call(event);
+          }
+          break;
+
+        case 'annotationRemoved':
+          if (payload != null) {
+            widget.onAnnotationRemoved?.call(
+              payload['pageIndex'] as int? ?? 0,
+              payload['measureNumber'] as int? ?? 1,
+              payload['remaining'] as int? ?? 0,
+            );
+          }
+          break;
+
+        case 'annotationsCleared':
+          if (payload != null) {
+            widget.onAnnotationsCleared?.call(
+              payload['pageIndex'] as int? ?? -1,
+            );
+          }
+          break;
+
+        case 'annotationModeChanged':
+          if (payload != null) {
+            widget.onAnnotationModeChanged?.call(
+              payload['enabled'] as bool? ?? false,
+            );
+          }
+          break;
+
+        case 'historyChanged':
+          if (payload != null) {
+            widget.onHistoryChanged?.call(
+              payload['canUndo'] as bool? ?? false,
+              payload['canRedo'] as bool? ?? false,
+            );
+          }
           break;
       }
     } catch (e) {
@@ -235,13 +302,15 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     if (_controller == null) return;
 
     final message = jsonEncode({'action': action, 'payload': payload});
-    
+
     // Debug: Check if we're sending XML
     if (action == 'load' && payload is Map && payload['xml'] != null) {
       final xml = payload['xml'] as String;
-      debugPrint('Sending XML to JS (first 100 chars): ${xml.substring(0, xml.length > 100 ? 100 : xml.length)}');
+      debugPrint(
+        'Sending XML to JS (first 100 chars): ${xml.substring(0, xml.length > 100 ? 100 : xml.length)}',
+      );
     }
-    
+
     // Escape for JavaScript string literal
     final escapedMessage = message
         .replaceAll('\\', '\\\\')
@@ -269,19 +338,18 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     } else if (widget.musicXmlUrl != null) {
       _sendToJs('loadUrl', {'url': widget.musicXmlUrl});
     }
-    
+
     // Wait for the load to complete
     return _loadCompleter!.future;
   }
 
-
   void _handleScoreLoaded(MusicXmlScoreInfo info) {
     debugPrint('=== TRACE: _handleScoreLoaded START (page=${info.pageCount})');
-    
+
     setState(() {
       _isLoading = false;
     });
-    
+
     debugPrint('=== TRACE: Completing load completer');
     // Complete the load operation
     if (_loadCompleter != null && !_loadCompleter!.isCompleted) {
@@ -289,7 +357,9 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     }
 
     // Report to parent - just pass through the info from OSMD
-    debugPrint('=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})');
+    debugPrint(
+      '=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})',
+    );
     widget.onLoaded?.call(info);
     debugPrint('=== TRACE: _handleScoreLoaded END');
   }
@@ -309,7 +379,7 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   void setZoom(double zoom) {
     // Update zoom level in JavaScript
     _controller?.runJavaScript('zoomLevel = $zoom;');
-    
+
     // Reload the FULL document at new zoom
     setState(() {
       _isLoading = true;
@@ -325,6 +395,71 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   /// Clear the rendered content.
   void clear() {
     _sendToJs('clear');
+  }
+
+  // ── Annotation Control Methods ──────────────────────────────────
+
+  /// Enable or disable annotation drawing mode.
+  void setAnnotationMode(bool enabled) {
+    _sendToJs('setAnnotationMode', {'enabled': enabled});
+  }
+
+  /// Set the stroke color and width for drawing annotations.
+  void setAnnotationStyle({String? color, double? width}) {
+    _sendToJs('setAnnotationStyle', {
+      if (color != null) 'color': color,
+      if (width != null) 'width': width,
+    });
+  }
+
+  /// Load previously saved annotations into the renderer.
+  ///
+  /// Each annotation should have: pageIndex, svgPath, measureNumber, x, y,
+  /// color, width.
+  void loadAnnotations(List<Map<String, dynamic>> annotations) {
+    _sendToJs('loadAnnotations', {'annotations': annotations});
+  }
+
+  /// Clear annotations for a specific page, or all pages if [pageIndex] is null.
+  void clearAnnotations({int? pageIndex}) {
+    _sendToJs('clearAnnotations', {'pageIndex': pageIndex});
+  }
+
+  /// Remove the last drawn annotation from a specific page.
+  void removeLastAnnotation(int pageIndex) {
+    _sendToJs('removeLastAnnotation', {'pageIndex': pageIndex});
+  }
+
+  /// Add a structured annotation symbol to a specific page.
+  ///
+  /// [kind] must be one of: 'fingerNumber', 'dynamicMark', 'bowing', 'articulation'.
+  /// [data] contains symbol-specific values (e.g., {'value': '3'} for finger number).
+  void addStructuredAnnotation({
+    required int pageIndex,
+    required String kind,
+    required int measureNumber,
+    required double x,
+    required double y,
+    Map<String, dynamic>? data,
+  }) {
+    _sendToJs('addStructuredAnnotation', {
+      'pageIndex': pageIndex,
+      'kind': kind,
+      'measureNumber': measureNumber,
+      'x': x,
+      'y': y,
+      'data': data ?? {},
+    });
+  }
+
+  /// Undo the last annotation action.
+  void undo() {
+    _sendToJs('undo');
+  }
+
+  /// Redo the last undone annotation action.
+  void redo() {
+    _sendToJs('redo');
   }
 
   @override

@@ -19,8 +19,12 @@ Widget buildMusicXmlRenderer({
   OnScoreLoaded? onLoaded,
   OnError? onError,
   OnReady? onReady,
+  OnAnnotationAdded? onAnnotationAdded,
+  OnAnnotationRemoved? onAnnotationRemoved,
+  OnAnnotationsCleared? onAnnotationsCleared,
+  OnAnnotationModeChanged? onAnnotationModeChanged,
+  OnHistoryChanged? onHistoryChanged,
 }) {
-  // Use OSMD-based WebRenderer for high-quality rendering
   return MusicXmlWebRenderer(
     key: key,
     musicXml: musicXml,
@@ -30,5 +34,10 @@ Widget buildMusicXmlRenderer({
     onLoaded: onLoaded,
     onError: onError,
     onReady: onReady,
+    onAnnotationAdded: onAnnotationAdded,
+    onAnnotationRemoved: onAnnotationRemoved,
+    onAnnotationsCleared: onAnnotationsCleared,
+    onAnnotationModeChanged: onAnnotationModeChanged,
+    onHistoryChanged: onHistoryChanged,
   );
 }
