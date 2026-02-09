@@ -474,13 +474,13 @@
                         // Measure-relative: look up current measure position and scale
                         const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
                         if (mBBox) {
-                            drawSvgPathMeasureRelative(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, mBBox);
+                            drawSvgPathMeasureRelative(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, mBBox);
                         }
                     } else {
                         // Pixel coords: scale proportionally from original canvas size
                         const scaleX = ann.origWidth ? canvas.width / ann.origWidth : 1;
                         const scaleY = ann.origHeight ? canvas.height / ann.origHeight : 1;
-                        drawSvgPathScaled(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, scaleX, scaleY);
+                        drawSvgPathScaled(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, scaleX, scaleY);
                     }
                 }
             }
@@ -535,8 +535,20 @@
                 if (!storedAnnotations.has(pi)) {
                     storedAnnotations.set(pi, []);
                 }
+                // Legacy annotations from DB lack coordSystem and origWidth/origHeight.
+                // Tag them so the proportional scaler can use current canvas size.
+                if (!ann.coordSystem) {
+                    const canvas = annotationCanvases.get(pi);
+                    ann.coordSystem = 'pixel';
+                    ann.origWidth = canvas ? canvas.width : null;
+                    ann.origHeight = canvas ? canvas.height : null;
+                }
                 storedAnnotations.get(pi).push(ann);
             }
+
+            // Convert loaded pixel annotations to measure-relative immediately
+            // so they survive future zoom/resize.
+            convertAnnotationsToMeasureRelative();
 
             for (const [pi] of storedAnnotations) {
                 redrawAnnotations(pi);
