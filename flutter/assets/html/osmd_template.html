@@ -117,7 +117,7 @@
         let currentStrokePoints = [];        // Points in the current stroke
         let annotationCanvases = new Map();  // pageIndex -> canvas element
         let storedAnnotations = new Map();   // pageIndex -> [{svgPath, measureNumber, x, y}, ...]
-        let strokeColor = '#FF0000';
+        let strokeColor = '#1A3A6B';
         let strokeWidth = 2.5;
 
         // ── Undo/Redo History Stack ───────────────────────────────────
@@ -163,6 +163,14 @@
         /** Create annotation canvases for all rendered OSMD pages */
         function setupAnnotationCanvases() {
             const pages = document.querySelectorAll('div[id^="osmdCanvasPage"]');
+
+            // Purge stale canvas refs (DOM elements destroyed by OSMD re-render)
+            for (const [idx, canvas] of annotationCanvases) {
+                if (!canvas.parentElement || !document.contains(canvas)) {
+                    annotationCanvases.delete(idx);
+                }
+            }
+
             pages.forEach((pageDiv, index) => {
                 getOrCreateAnnotationCanvas(pageDiv, index);
             });
@@ -170,6 +178,40 @@
             // Redraw stored annotations
             for (const [pageIndex] of storedAnnotations) {
                 redrawAnnotations(pageIndex);
+            }
+        }
+
+        /**
+         * Convert all annotations still in 'pixel' coord system to 'measure' coords.
+         * Called once when exiting drawing mode.
+         */
+        function convertAnnotationsToMeasureRelative() {
+            for (const [pageIndex, annotations] of storedAnnotations) {
+                for (const ann of annotations) {
+                    if (ann.coordSystem === 'measure') continue; // already converted
+
+                    const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
+                    if (!mBBox || mBBox.w <= 0 || mBBox.h <= 0) continue; // can't convert, leave as pixel
+
+                    // Parse the pixel-space SVG path
+                    const pixelPoints = svgPathToPoints(ann.svgPath);
+                    if (pixelPoints.length < 2) continue;
+
+                    // Convert each point to measure-relative (0-1 within measure bbox)
+                    const relPoints = pixelPoints.map(p => ({
+                        x: (p.x - mBBox.x) / mBBox.w,
+                        y: (p.y - mBBox.y) / mBBox.h,
+                    }));
+
+                    // Use higher precision for normalized coords
+                    ann.svgPath = pointsToSvgPathPrecise(relPoints);
+                    ann.coordSystem = 'measure';
+
+                    // Also update the midpoint x/y to measure-relative
+                    const mid = relPoints[Math.floor(relPoints.length / 2)];
+                    ann.x = mid.x;
+                    ann.y = mid.y;
+                }
             }
         }
 
@@ -183,6 +225,13 @@
                     canvas.classList.remove('drawing-mode');
                 }
             }
+
+            // When exiting drawing mode, convert all pixel-space annotations
+            // to measure-relative coordinates for zoom/reflow resilience.
+            if (!enabled) {
+                convertAnnotationsToMeasureRelative();
+            }
+
             sendToFlutter('annotationModeChanged', { enabled: annotationEnabled });
         }
 
@@ -265,6 +314,10 @@
                 y: normY,
                 color: strokeColor,
                 width: strokeWidth,
+                // Starts as pixel coords; converted to measure-relative on exit drawing mode
+                coordSystem: 'pixel',
+                origWidth: canvas.width,
+                origHeight: canvas.height,
             };
 
             if (!storedAnnotations.has(pageIndex)) {
@@ -294,7 +347,7 @@
 
         // ── SVG Path Generation ───────────────────────────────────────
 
-        /** Convert an array of {x, y} points to an SVG path string */
+        /** Convert an array of {x, y} points to an SVG path string (pixel coords) */
         function pointsToSvgPath(points) {
             if (points.length === 0) return '';
             let path = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
@@ -304,13 +357,25 @@
             return path;
         }
 
+        /**
+         * Like pointsToSvgPath but with higher decimal precision for normalized coords.
+         */
+        function pointsToSvgPathPrecise(points) {
+            if (points.length === 0) return '';
+            let path = `M ${points[0].x.toFixed(4)} ${points[0].y.toFixed(4)}`;
+            for (let i = 1; i < points.length; i++) {
+                path += ` L ${points[i].x.toFixed(4)} ${points[i].y.toFixed(4)}`;
+            }
+            return path;
+        }
+
         /** Parse an SVG path string back to an array of {x, y} points */
         function svgPathToPoints(svgPath) {
             const points = [];
-            const commands = svgPath.match(/[ML]\s*[\d.]+\s+[\d.]+/g);
+            const commands = svgPath.match(/[ML]\s*-?[\d.]+\s+-?[\d.]+/g);
             if (!commands) return points;
             for (const cmd of commands) {
-                const nums = cmd.match(/[\d.]+/g);
+                const nums = cmd.match(/-?[\d.]+/g);
                 if (nums && nums.length >= 2) {
                     points.push({ x: parseFloat(nums[0]), y: parseFloat(nums[1]) });
                 }
@@ -318,57 +383,56 @@
             return points;
         }
 
-        // ── Measure Coordinate Tracking ───────────────────────────────
+        // ── Measure Coordinate Tracking (DOM-based) ─────────────────────
 
-        /** Find the measure at a given point (pixel coordinates relative to page canvas) */
+        /**
+         * Get the bounding box of a measure in pixel coordinates
+         * relative to its page div container.
+         * Uses the DOM: .vf-measure elements with id matching the measure number.
+         * Returns {x, y, w, h} or null if not found.
+         */
+        function getMeasureBBox(measureNumber, pageIndex) {
+            const pageDiv = document.querySelectorAll('div[id^="osmdCanvasPage"]')[pageIndex];
+            if (!pageDiv) return null;
+
+            // OSMD renders .vf-measure elements with id = measure number
+            const measureEl = pageDiv.querySelector(`.vf-measure[id="${measureNumber}"]`);
+            if (!measureEl) return null;
+
+            const measureRect = measureEl.getBoundingClientRect();
+            const pageRect = pageDiv.getBoundingClientRect();
+
+            return {
+                x: measureRect.left - pageRect.left,
+                y: measureRect.top - pageRect.top,
+                w: measureRect.width,
+                h: measureRect.height,
+            };
+        }
+
+        /**
+         * Find which measure is closest to a point (in page-div-relative pixel coords).
+         */
         function findMeasureAtPoint(px, py, pageIndex) {
-            if (!osmd || !osmd.GraphicSheet || !osmd.GraphicSheet.musicPages) {
-                return { measureNumber: 1 };
-            }
-
-            const page = osmd.GraphicSheet.musicPages[pageIndex];
-            if (!page || !page.musicSystems) {
-                return { measureNumber: 1 };
-            }
-
-            // OSMD uses a 10 units-per-mm coordinate system
-            // Convert pixel coords to OSMD units for comparison
             const pageDiv = document.querySelectorAll('div[id^="osmdCanvasPage"]')[pageIndex];
             if (!pageDiv) return { measureNumber: 1 };
 
+            const measures = pageDiv.querySelectorAll('.vf-measure');
+            if (!measures.length) return { measureNumber: 1 };
+
+            const pageRect = pageDiv.getBoundingClientRect();
             let closestMeasure = 1;
             let closestDistance = Infinity;
 
-            for (const system of page.musicSystems) {
-                if (!system.graphicalMeasures) continue;
-                for (const measureArray of system.graphicalMeasures) {
-                    if (!measureArray || measureArray.length === 0) continue;
-                    const gm = measureArray[0];
-                    const bbox = gm.boundingBox;
-                    if (!bbox) continue;
+            for (const el of measures) {
+                const rect = el.getBoundingClientRect();
+                const cx = (rect.left + rect.width / 2) - pageRect.left;
+                const cy = (rect.top + rect.height / 2) - pageRect.top;
 
-                    // Get absolute position of the measure bounding box
-                    const absPos = bbox.absolutePosition;
-                    const size = bbox.size;
-                    if (!absPos || !size) continue;
-
-                    // Convert OSMD units to pixels (approximate)
-                    // OSMD uses 10 units per mm, screen is ~96 DPI = 3.78 px/mm
-                    const scale = (pageDiv.clientWidth / (page.pageWidth || pageDiv.clientWidth)) || 1;
-                    const mx = absPos.x * scale;
-                    const my = absPos.y * scale;
-                    const mw = size.width * scale;
-                    const mh = size.height * scale;
-
-                    // Center of measure
-                    const cx = mx + mw / 2;
-                    const cy = my + mh / 2;
-
-                    const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
-                    if (dist < closestDistance) {
-                        closestDistance = dist;
-                        closestMeasure = gm.parentSourceMeasure?.measureNumber || 1;
-                    }
+                const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+                if (dist < closestDistance) {
+                    closestDistance = dist;
+                    closestMeasure = parseInt(el.id, 10) || 1;
                 }
             }
 
@@ -395,8 +459,18 @@
                     const py = ann.y * canvas.height;
                     STRUCTURED_SYMBOLS[ann.kind].render(ctx, px, py, ann.data || {});
                 } else if (ann.svgPath) {
-                    // Freehand annotation: draw SVG path
-                    drawSvgPath(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth);
+                    if (ann.coordSystem === 'measure') {
+                        // Measure-relative: look up current measure position and scale
+                        const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
+                        if (mBBox) {
+                            drawSvgPathMeasureRelative(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, mBBox);
+                        }
+                    } else {
+                        // Pixel coords: scale proportionally from original canvas size
+                        const scaleX = ann.origWidth ? canvas.width / ann.origWidth : 1;
+                        const scaleY = ann.origHeight ? canvas.height / ann.origHeight : 1;
+                        drawSvgPathScaled(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, scaleX, scaleY);
+                    }
                 }
             }
         }
@@ -418,9 +492,51 @@
             ctx.stroke();
         }
 
+        /**
+         * Draw an SVG path with proportional scaling.
+         * Points in the path are in original pixel coordinates;
+         * scaleX/scaleY transform them to current canvas size.
+         */
+        function drawSvgPathScaled(ctx, svgPath, color, width, scaleX, scaleY) {
+            const points = svgPathToPoints(svgPath);
+            if (points.length < 2) return;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0].x * scaleX, points[0].y * scaleY);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x * scaleX, points[i].y * scaleY);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
+
+        /**
+         * Draw an SVG path stored in measure-relative coordinates.
+         * Points are offsets within the measure bbox (0-1 range).
+         * Scaled to the measure's current pixel position.
+         */
+        function drawSvgPathMeasureRelative(ctx, svgPath, color, width, mBBox) {
+            const points = svgPathToPoints(svgPath);
+            if (points.length < 2) return;
+
+            ctx.beginPath();
+            ctx.moveTo(mBBox.x + points[0].x * mBBox.w, mBBox.y + points[0].y * mBBox.h);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(mBBox.x + points[i].x * mBBox.w, mBBox.y + points[i].y * mBBox.h);
+            }
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
+
         /** Load annotations from Flutter (restore saved annotations) */
         function loadAnnotations(annotations) {
-            // annotations: [{pageIndex, svgPath, measureNumber, x, y, color, width}, ...]
+            // annotations: [{pageIndex, svgPath, measureNumber, x, y, color, width, coordSystem?}, ...]
             storedAnnotations.clear();
             for (const ann of annotations) {
                 const pi = ann.pageIndex || 0;

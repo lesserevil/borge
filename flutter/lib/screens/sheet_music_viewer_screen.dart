@@ -29,6 +29,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
   bool _annotationMode = false;
   bool _canUndo = false;
   bool _canRedo = false;
+  bool _isRendering = false;
   final GlobalKey _rendererKey = GlobalKey();
 
   // Annotation persistence
@@ -91,11 +92,13 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         widget.appState.goToPage(0);
       } else if (event.logicalKey == LogicalKeyboardKey.end) {
         widget.appState.goToPage(widget.appState.totalPages - 1);
-      } else if (event.logicalKey == LogicalKeyboardKey.equal ||
-          event.logicalKey == LogicalKeyboardKey.add) {
+      } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.equal ||
+          event.logicalKey == LogicalKeyboardKey.add)) {
+        setState(() { _isRendering = true; });
         widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
-      } else if (event.logicalKey == LogicalKeyboardKey.minus ||
-          event.logicalKey == LogicalKeyboardKey.underscore) {
+      } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.minus ||
+          event.logicalKey == LogicalKeyboardKey.underscore)) {
+        setState(() { _isRendering = true; });
         widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         Navigator.of(context).pop();
@@ -131,6 +134,11 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                     : null,
                 tooltip: 'Redo',
               ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => (_rendererKey.currentState as dynamic)?.clearAnnotations(),
+                tooltip: 'Clear All Annotations',
+              ),
               const VerticalDivider(width: 1, color: Colors.white24),
               // Export/import only on native (requires file system)
               if (!kIsWeb) ...[
@@ -163,14 +171,26 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
             const VerticalDivider(width: 1, color: Colors.white24),
             IconButton(
               icon: const Icon(Icons.zoom_out),
-              onPressed: () => widget.appState.zoom =
-                  (widget.appState.zoom - 0.1).clamp(0.5, 3.0),
+              onPressed: (_annotationMode || _isRendering) ? null : () {
+                setState(() { _isRendering = true; });
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted && _isRendering) setState(() { _isRendering = false; });
+                });
+                widget.appState.zoom =
+                    (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
+              },
               tooltip: 'Zoom Out',
             ),
             IconButton(
               icon: const Icon(Icons.zoom_in),
-              onPressed: () => widget.appState.zoom =
-                  (widget.appState.zoom + 0.1).clamp(0.5, 3.0),
+              onPressed: (_annotationMode || _isRendering) ? null : () {
+                setState(() { _isRendering = true; });
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted && _isRendering) setState(() { _isRendering = false; });
+                });
+                widget.appState.zoom =
+                    (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
+              },
               tooltip: 'Zoom In',
             ),
             ListenableBuilder(
@@ -203,8 +223,8 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
             }
 
             return GestureDetector(
-              onTapUp: (details) => _handleTap(context, details),
-              onHorizontalDragEnd: (details) => _handleSwipe(details),
+              onTapUp: _annotationMode ? null : (details) => _handleTap(context, details),
+              onHorizontalDragEnd: _annotationMode ? null : (details) => _handleSwipe(details),
               child: Stack(
                 children: [
                   // Sheet music display
@@ -214,6 +234,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                       page: page,
                       songName: widget.appState.currentSong?.name ?? "",
                       appState: widget.appState,
+                      annotationMode: _annotationMode,
                       rendererKey: _rendererKey,
                       onHistoryChanged: (canUndo, canRedo) {
                         setState(() {
@@ -323,7 +344,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       'measureNumber': ann.measureNumber,
       'x': ann.x,
       'y': ann.y,
-      'color': '#FF0000',
+      'color': '#1A3A6B',
       'width': 2.5,
     }).toList();
 
@@ -388,7 +409,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         'measureNumber': ann.measureNumber,
         'x': ann.x,
         'y': ann.y,
-        'color': '#FF0000',
+        'color': '#1A3A6B',
         'width': 2.5,
       }).toList();
       (_rendererKey.currentState as dynamic)?.loadAnnotations(annotationMaps);
@@ -438,6 +459,7 @@ class _SheetMusicPage extends StatefulWidget {
   final String songName;
   final AppState appState;
   final GlobalKey? rendererKey;
+  final bool annotationMode;
   final OnHistoryChanged? onHistoryChanged;
   final OnAnnotationAdded? onAnnotationAdded;
   final OnAnnotationRemoved? onAnnotationRemoved;
@@ -450,6 +472,7 @@ class _SheetMusicPage extends StatefulWidget {
     required this.songName,
     required this.appState,
     this.rendererKey,
+    this.annotationMode = false,
     this.onHistoryChanged,
     this.onAnnotationAdded,
     this.onAnnotationRemoved,
@@ -624,6 +647,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
           ValueKey('musicxml-${widget.page.path}-$orientation'),
       musicXml: _musicXmlContent!,
       backgroundColor: Colors.white,
+      annotationMode: widget.annotationMode,
       options: MusicXmlRenderOptions(
         initialPage: widget.page.internalPageNumber,
         currentPage: widget.page.internalPageNumber,

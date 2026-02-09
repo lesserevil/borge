@@ -25,6 +25,7 @@ Widget buildMusicXmlRenderer({
   OnAnnotationsCleared? onAnnotationsCleared,
   OnAnnotationModeChanged? onAnnotationModeChanged,
   OnHistoryChanged? onHistoryChanged,
+  bool annotationMode = false,
 }) {
   return MusicXmlWebRendererHtml(
     key: key,

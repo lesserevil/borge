@@ -151,7 +151,7 @@
         let currentStrokePoints = [];
         let annotationCanvases = new Map();
         let storedAnnotations = new Map();
-        let strokeColor = '#FF0000';
+        let strokeColor = '#1A3A6B';
         let strokeWidth = 2.5;
 
         // ── Undo/Redo History Stack ───────────────────────────────────
@@ -474,13 +474,13 @@
                         // Measure-relative: look up current measure position and scale
                         const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
                         if (mBBox) {
-                            drawSvgPathMeasureRelative(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, mBBox);
+                            drawSvgPathMeasureRelative(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, mBBox);
                         }
                     } else {
                         // Pixel coords: scale proportionally from original canvas size
                         const scaleX = ann.origWidth ? canvas.width / ann.origWidth : 1;
                         const scaleY = ann.origHeight ? canvas.height / ann.origHeight : 1;
-                        drawSvgPathScaled(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, scaleX, scaleY);
+                        drawSvgPathScaled(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, scaleX, scaleY);
                     }
                 }
             }

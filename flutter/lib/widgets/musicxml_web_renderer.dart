@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -58,6 +59,9 @@ class MusicXmlWebRenderer extends StatefulWidget {
   /// Called when undo/redo history state changes.
   final OnHistoryChanged? onHistoryChanged;
 
+  /// Whether annotation mode is active (enables WebView gesture claiming on Android).
+  final bool annotationMode;
+
   const MusicXmlWebRenderer({
     super.key,
     this.musicXml,
@@ -72,6 +76,7 @@ class MusicXmlWebRenderer extends StatefulWidget {
     this.onAnnotationsCleared,
     this.onAnnotationModeChanged,
     this.onHistoryChanged,
+    this.annotationMode = false,
   }) : assert(
          musicXml != null || musicXmlUrl != null,
          'Either musicXml or musicXmlUrl must be provided',
@@ -85,6 +90,7 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   WebViewController? _controller;
   bool _isReady = false;
   bool _isLoading = true;
+  bool _isZoomReload = false;
   String? _error;
   String? _htmlContent;
 
@@ -356,12 +362,19 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
       _loadCompleter!.complete();
     }
 
-    // Report to parent - just pass through the info from OSMD
-    debugPrint(
-      '=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})',
-    );
-    widget.onLoaded?.call(info);
-    debugPrint('=== TRACE: _handleScoreLoaded END');
+    // Skip annotation reload on zoom — JS already has measure-relative
+    // annotations in storedAnnotations that survive re-render.
+    if (_isZoomReload) {
+      _isZoomReload = false;
+      debugPrint('=== TRACE: _handleScoreLoaded END (zoom reload, skipping onLoaded)');
+    } else {
+      // Report to parent - just pass through the info from OSMD
+      debugPrint(
+        '=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})',
+      );
+      widget.onLoaded?.call(info);
+      debugPrint('=== TRACE: _handleScoreLoaded END');
+    }
   }
 
   /// Set the current page in a paginated view.
@@ -380,7 +393,9 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     // Update zoom level in JavaScript
     _controller?.runJavaScript('zoomLevel = $zoom;');
 
-    // Reload the FULL document at new zoom
+    // Reload the FULL document at new zoom — but skip annotation reload
+    // since JS already has measure-relative annotations in memory.
+    _isZoomReload = true;
     setState(() {
       _isLoading = true;
     });
@@ -479,7 +494,22 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
 
     return Stack(
       children: [
-        WebViewWidget(controller: _controller!),
+        WebViewWidget(
+          controller: _controller!,
+          gestureRecognizers: widget.annotationMode
+              ? <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<VerticalDragGestureRecognizer>(
+                    () => VerticalDragGestureRecognizer(),
+                  ),
+                  Factory<HorizontalDragGestureRecognizer>(
+                    () => HorizontalDragGestureRecognizer(),
+                  ),
+                  Factory<LongPressGestureRecognizer>(
+                    () => LongPressGestureRecognizer(),
+                  ),
+                }
+              : <Factory<OneSequenceGestureRecognizer>>{},
+        ),
         if (_isLoading) _buildLoading(),
         if (_error != null) _buildError(),
       ],
