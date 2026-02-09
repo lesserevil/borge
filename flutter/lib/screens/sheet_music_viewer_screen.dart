@@ -324,7 +324,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       'measureNumber': ann.measureNumber,
       'x': ann.x,
       'y': ann.y,
-      'color': '#FF0000',
+      'color': '#1A3A6B',
       'width': 2.5,
     }).toList();
 
@@ -389,7 +389,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         'measureNumber': ann.measureNumber,
         'x': ann.x,
         'y': ann.y,
-        'color': '#FF0000',
+        'color': '#1A3A6B',
         'width': 2.5,
       }).toList();
       (_rendererKey.currentState as dynamic)?.loadAnnotations(annotationMaps);
