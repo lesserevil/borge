@@ -12,7 +12,7 @@ class AppState extends ChangeNotifier {
   Song? _currentSong;
   int _currentPageIndex = 0;
   bool _isLoading = false;
-  double _zoom = 1.0;
+  double _zoom = 0.4;
 
   final MusicLibraryService _musicLibrary = MusicLibraryService();
 

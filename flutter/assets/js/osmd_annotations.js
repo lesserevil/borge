@@ -76,6 +76,16 @@ function getOrCreateAnnotationCanvas(pageDiv, pageIndex) {
     canvas.width = pageDiv.clientWidth;
     canvas.height = pageDiv.clientHeight;
 
+    // Set inline styles (CSS class approach doesn't work reliably in Android WebView)
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.zIndex = '10';
+    canvas.style.touchAction = 'none';
+    canvas.style.pointerEvents = annotationEnabled ? 'auto' : 'none';
+
     if (annotationEnabled) {
         canvas.classList.add('drawing-mode');
     }
@@ -93,14 +103,20 @@ function getOrCreateAnnotationCanvas(pageDiv, pageIndex) {
 
 /** Create annotation canvases for all rendered OSMD pages */
 function setupAnnotationCanvases() {
+    teardownAnnotationCanvases();
     const pages = document.querySelectorAll('div[id^="osmdCanvasPage"]');
+    sendToFlutter('debug', { msg: 'setupAnnotationCanvases', pageCount: pages.length, storedSize: storedAnnotations.size });
     pages.forEach(function(pageDiv, index) {
         getOrCreateAnnotationCanvas(pageDiv, index);
     });
 
-    // Redraw stored annotations
-    for (const [pageIndex] of storedAnnotations) {
-        redrawAnnotations(pageIndex);
+    try {
+        for (const [pageIndex] of storedAnnotations) {
+            sendToFlutter('debug', { msg: 'redrawing page', pageIndex: pageIndex });
+            redrawAnnotations(pageIndex);
+        }
+    } catch (err) {
+        sendToFlutter('debug', { msg: 'redraw error', error: err.message, stack: err.stack });
     }
 }
 
@@ -109,12 +125,18 @@ function setupAnnotationCanvases() {
 /** Enable or disable annotation drawing mode */
 function setAnnotationMode(enabled) {
     annotationEnabled = enabled;
-    for (const [, canvas] of annotationCanvases) {
+    sendToFlutter('debug', { msg: 'setAnnotationMode', enabled: enabled, canvasCount: annotationCanvases.size });
+    for (const [idx, canvas] of annotationCanvases) {
         if (enabled) {
             canvas.classList.add('drawing-mode');
+            canvas.style.pointerEvents = 'auto';
+            canvas.style.zIndex = '10';
         } else {
             canvas.classList.remove('drawing-mode');
+            canvas.style.pointerEvents = 'none';
+            canvas.style.zIndex = '10';
         }
+        sendToFlutter('debug', { msg: 'canvas mode', idx: idx, inlinePointerEvents: canvas.style.pointerEvents, w: canvas.width, h: canvas.height, classes: canvas.className });
     }
 
     // When exiting drawing mode, convert all pixel-space annotations
@@ -135,6 +157,7 @@ function setAnnotationStyle(color, width) {
 // ── Pointer Event Handlers ────────────────────────────────────────────
 
 function onPointerDown(e, pageIndex) {
+    sendToFlutter('debug', { msg: 'pointerDown', pageIndex: pageIndex, enabled: annotationEnabled, clientX: e.clientX, clientY: e.clientY });
     if (!annotationEnabled) return;
     e.preventDefault();
     isDrawing = true;
@@ -143,6 +166,7 @@ function onPointerDown(e, pageIndex) {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    sendToFlutter('debug', { msg: 'drawStart', x: Math.round(x), y: Math.round(y), canvasW: canvas.width, canvasH: canvas.height, color: strokeColor, width: strokeWidth });
 
     currentStrokePoints = [{ x: x, y: y }];
 
@@ -174,6 +198,7 @@ function onPointerMove(e, pageIndex) {
 }
 
 function onPointerUp(e, pageIndex) {
+    sendToFlutter('debug', { msg: 'pointerUp', pageIndex: pageIndex, isDrawing: isDrawing, points: currentStrokePoints.length });
     if (!isDrawing) return;
     e.preventDefault();
     isDrawing = false;
@@ -315,6 +340,8 @@ function redrawAnnotations(pageIndex) {
     const annotations = storedAnnotations.get(pageIndex);
     if (!annotations) return;
 
+    sendToFlutter('debug', { msg: 'redraw', pageIndex: pageIndex, count: annotations.length, canvasW: canvas.width, canvasH: canvas.height });
+
     for (var i = 0; i < annotations.length; i++) {
         const ann = annotations[i];
 
@@ -324,15 +351,15 @@ function redrawAnnotations(pageIndex) {
             STRUCTURED_SYMBOLS[ann.kind].render(ctx, px, py, ann.data || {});
         } else if (ann.svgPath) {
             if (ann.coordSystem === 'measure') {
-                // Measure-relative: look up current measure position and scale
                 const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
+                sendToFlutter('debug', { msg: 'redraw-measure', i: i, measure: ann.measureNumber, hasBBox: !!mBBox, bbox: mBBox });
                 if (mBBox) {
                     drawSvgPathMeasureRelative(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, mBBox);
                 }
             } else {
-                // Pixel coords: scale proportionally from original canvas size
                 const scaleX = ann.origWidth ? canvas.width / ann.origWidth : 1;
                 const scaleY = ann.origHeight ? canvas.height / ann.origHeight : 1;
+                sendToFlutter('debug', { msg: 'redraw-pixel', i: i, coordSystem: ann.coordSystem, origW: ann.origWidth, origH: ann.origHeight, scaleX: scaleX, scaleY: scaleY });
                 drawSvgPathScaled(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, scaleX, scaleY);
             }
         }

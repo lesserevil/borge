@@ -95,11 +95,11 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.equal ||
           event.logicalKey == LogicalKeyboardKey.add)) {
         setState(() { _isRendering = true; });
-        widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
+        widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
       } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.minus ||
           event.logicalKey == LogicalKeyboardKey.underscore)) {
         setState(() { _isRendering = true; });
-        widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
+        widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         Navigator.of(context).pop();
       }
@@ -177,7 +177,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                   if (mounted && _isRendering) setState(() { _isRendering = false; });
                 });
                 widget.appState.zoom =
-                    (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
+                    (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
               },
               tooltip: 'Zoom Out',
             ),
@@ -189,7 +189,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                   if (mounted && _isRendering) setState(() { _isRendering = false; });
                 });
                 widget.appState.zoom =
-                    (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
+                    (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
               },
               tooltip: 'Zoom In',
             ),

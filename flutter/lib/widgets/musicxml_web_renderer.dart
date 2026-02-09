@@ -188,6 +188,9 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
       final controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(widget.backgroundColor)
+        ..setOnConsoleMessage((message) {
+          debugPrint('WebView JS: ${message.message}');
+        })
         ..addJavaScriptChannel(
           'FlutterChannel',
           onMessageReceived: _handleJsMessage,
@@ -306,6 +309,10 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
             );
           }
           break;
+
+        case 'debug':
+          debugPrint('[JS DEBUG] $payload');
+          break;
       }
     } catch (e) {
       debugPrint('Error parsing JS message: $e');
@@ -347,8 +354,7 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     });
 
     if (widget.musicXml != null) {
-      // Always load the FULL document - no splitting!
-      _sendToJs('load', {'xml': widget.musicXml});
+      _sendToJs('load', {'xml': widget.musicXml, 'zoom': widget.options.zoom});
     } else if (widget.musicXmlUrl != null) {
       _sendToJs('loadUrl', {'url': widget.musicXmlUrl});
     }
@@ -506,14 +512,8 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
           controller: _controller!,
           gestureRecognizers: widget.annotationMode
               ? <Factory<OneSequenceGestureRecognizer>>{
-                  Factory<VerticalDragGestureRecognizer>(
-                    () => VerticalDragGestureRecognizer(),
-                  ),
-                  Factory<HorizontalDragGestureRecognizer>(
-                    () => HorizontalDragGestureRecognizer(),
-                  ),
-                  Factory<LongPressGestureRecognizer>(
-                    () => LongPressGestureRecognizer(),
+                  Factory<EagerGestureRecognizer>(
+                    () => EagerGestureRecognizer(),
                   ),
                 }
               : <Factory<OneSequenceGestureRecognizer>>{},

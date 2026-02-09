@@ -379,7 +379,7 @@
             if (!osmd || !osmd.Sheet || !osmd.Sheet.sourceData) return;
 
             const firstVisibleMeasure = getFirstVisibleMeasure();
-            zoomLevel = Math.max(0.5, Math.min(2.0, zoom));
+            zoomLevel = Math.max(0.4, Math.min(2.0, zoom));
 
             await loadMusicXml(osmd.Sheet.sourceData);
 
@@ -415,6 +415,9 @@
                         init(payload || {});
                         break;
                     case 'load':
+                        if (payload.zoom != null) {
+                            zoomLevel = Math.max(0.4, Math.min(2.0, payload.zoom));
+                        }
                         loadMusicXml(payload.xml || payload);
                         break;
                     case 'setZoom':
