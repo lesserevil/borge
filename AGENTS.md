@@ -50,3 +50,7 @@ All common development tasks MUST be defined as `make` targets in the root `Make
 
 If a target is missing for a task you need to perform, you MUST add it to the `Makefile` first, then use it.
 
+**MAKEFILE RULES:**
+- **No stamp files.** Build targets MUST use the actual build artifact as the Make target, with source files as prerequisites. Never use sentinel/stamp files (e.g., `.build-stamps/`, `touch $@` markers) to track build freshness.
+- **Wildcard inputs.** Source file lists MUST be built dynamically (e.g., `$(shell find dir -type f -name '*.dart')`) so that adding new source files never requires editing the Makefile.
+

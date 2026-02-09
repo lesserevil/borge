@@ -12,6 +12,17 @@ DOCKER_FLUTTER := $(DOCKER_COMPOSE) run --rm flutter
 DOCKER_FLUTTER_USB := $(DOCKER_COMPOSE) run --rm flutter-usb
 DOCKER_PEBBLE  := $(DOCKER_COMPOSE) run --rm pebble
 
+# Source file sets (used for change detection)
+FLUTTER_SRCS := $(shell find $(FLUTTER_DIR)/lib -type f -name '*.dart' 2>/dev/null)
+FLUTTER_DEPS := $(FLUTTER_DIR)/pubspec.yaml $(FLUTTER_DIR)/pubspec.lock
+PEBBLE_SRCS  := $(shell find $(PEBBLE_DIR)/src -type f 2>/dev/null)
+
+# Build artifacts
+LINUX_BINARY := $(FLUTTER_DIR)/build/linux/x64/release/bundle/borge
+WEB_OUTPUT   := $(FLUTTER_DIR)/build/web/main.dart.js
+APK_OUTPUT   := $(FLUTTER_DIR)/build/app/outputs/flutter-apk/app-release.apk
+PEBBLE_FW    := $(PEBBLE_DIR)/build/borge-companion.pbw
+
 # ----------------------------------------------------------------------
 # Standard Targets (Docker — default)
 # ----------------------------------------------------------------------
@@ -21,32 +32,38 @@ deps:
 	@echo "⬇️  Installing dependencies..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get"
 
-.PHONY: build
-build: deps
+$(LINUX_BINARY): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
 	@echo "🔨 Building Flutter app for Linux desktop..."
-	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build linux --release"
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter build linux --release"
+
+.PHONY: build
+build: $(LINUX_BINARY)
 
 .PHONY: test
-test: deps
+test:
 	@echo "🧪 Running Flutter tests..."
-	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter test"
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter test"
+
+$(WEB_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
+	@echo "🌐 Building web app..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter build web --release"
 
 .PHONY: build-web
-build-web: deps
-	@echo "🌐 Building web app..."
-	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build web --release"
+build-web: $(WEB_OUTPUT)
 
 .PHONY: run-web
-run-web: deps
+run-web:
 	@echo "🌐 Serving Flutter app on http://localhost:8080..."
-	@$(DOCKER_COMPOSE) run --rm -p 8080:8080 flutter bash -c "cd flutter && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0"
+	@$(DOCKER_COMPOSE) run --rm -p 8080:8080 flutter bash -c "cd flutter && flutter pub get && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0"
+
+$(APK_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
+	@echo "📱 Building Android APK..."
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter build apk --release"
 
 .PHONY: build-apk
-build-apk: deps
-	@echo "📱 Building Android APK..."
-	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter build apk --release"
+build-apk: $(APK_OUTPUT)
 
-APK_PATH := flutter/build/app/outputs/flutter-apk/app-release.apk
+APK_PATH := $(APK_OUTPUT)
 
 # ADB_HOST: set to <ip>:<port> to install over TCP (direct device or adb bridge).
 # Leave unset to install via USB.
@@ -63,10 +80,12 @@ else
 endif
 	@echo "✅ APK installed."
 
-.PHONY: pebble
-pebble:
+$(PEBBLE_FW): $(PEBBLE_SRCS)
 	@echo "⌚ Building Pebble firmware..."
 	@$(DOCKER_PEBBLE) pebble build
+
+.PHONY: pebble
+pebble: $(PEBBLE_FW)
 
 .PHONY: shell
 shell:
@@ -82,10 +101,10 @@ images:
 clean:
 	@echo "🧹 Cleaning Docker resources and build artifacts..."
 	@$(DOCKER_COMPOSE) down --rmi local --volumes --remove-orphans
-	@cd $(FLUTTER_DIR) && rm -rf build/linux build/app/outputs/flutter-apk
+	@cd $(FLUTTER_DIR) && rm -rf build/linux build/app/outputs/flutter-apk build/web
 
 .PHONY: package
-package: build-apk
+package: $(APK_OUTPUT)
 	@echo "📦 All packaged."
 
 # ----------------------------------------------------------------------
