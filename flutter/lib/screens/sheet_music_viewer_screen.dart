@@ -131,6 +131,11 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                     : null,
                 tooltip: 'Redo',
               ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => (_rendererKey.currentState as dynamic)?.clearAnnotations(),
+                tooltip: 'Clear All Annotations',
+              ),
               const VerticalDivider(width: 1, color: Colors.white24),
               // Export/import only on native (requires file system)
               if (!kIsWeb) ...[
