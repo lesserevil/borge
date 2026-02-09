@@ -163,6 +163,14 @@
         /** Create annotation canvases for all rendered OSMD pages */
         function setupAnnotationCanvases() {
             const pages = document.querySelectorAll('div[id^="osmdCanvasPage"]');
+
+            // Purge stale canvas refs (DOM elements destroyed by OSMD re-render)
+            for (const [idx, canvas] of annotationCanvases) {
+                if (!canvas.parentElement || !document.contains(canvas)) {
+                    annotationCanvases.delete(idx);
+                }
+            }
+
             pages.forEach((pageDiv, index) => {
                 getOrCreateAnnotationCanvas(pageDiv, index);
             });
