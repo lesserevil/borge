@@ -173,6 +173,9 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
               icon: const Icon(Icons.zoom_out),
               onPressed: (_annotationMode || _isRendering) ? null : () {
                 setState(() { _isRendering = true; });
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted && _isRendering) setState(() { _isRendering = false; });
+                });
                 widget.appState.zoom =
                     (widget.appState.zoom - 0.1).clamp(0.5, 3.0);
               },
@@ -182,6 +185,9 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
               icon: const Icon(Icons.zoom_in),
               onPressed: (_annotationMode || _isRendering) ? null : () {
                 setState(() { _isRendering = true; });
+                Future.delayed(const Duration(seconds: 3), () {
+                  if (mounted && _isRendering) setState(() { _isRendering = false; });
+                });
                 widget.appState.zoom =
                     (widget.appState.zoom + 0.1).clamp(0.5, 3.0);
               },
@@ -240,11 +246,6 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                       onAnnotationRemoved: _handleAnnotationRemoved,
                       onAnnotationsCleared: _handleAnnotationsCleared,
                       onScoreLoaded: _loadSavedAnnotations,
-                      onRenderComplete: () {
-                        if (_isRendering) {
-                          setState(() { _isRendering = false; });
-                        }
-                      },
                     ),
                   ),
                   // Navigation overlay
@@ -464,7 +465,6 @@ class _SheetMusicPage extends StatefulWidget {
   final OnAnnotationRemoved? onAnnotationRemoved;
   final OnAnnotationsCleared? onAnnotationsCleared;
   final VoidCallback? onScoreLoaded;
-  final VoidCallback? onRenderComplete;
 
   const _SheetMusicPage({
     super.key,
@@ -478,7 +478,6 @@ class _SheetMusicPage extends StatefulWidget {
     this.onAnnotationRemoved,
     this.onAnnotationsCleared,
     this.onScoreLoaded,
-    this.onRenderComplete,
   });
 
   @override
@@ -670,7 +669,6 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
 
         // Load saved annotations after score is rendered
         widget.onScoreLoaded?.call();
-        widget.onRenderComplete?.call();
       },
       onError: (message, type) {
         debugPrint('MusicXML render error ($type): $message');

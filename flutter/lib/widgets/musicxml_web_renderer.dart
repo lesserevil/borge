@@ -367,15 +367,14 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     if (_isZoomReload) {
       _isZoomReload = false;
       debugPrint('=== TRACE: _handleScoreLoaded END (zoom reload, skipping onLoaded)');
-      return;
+    } else {
+      // Report to parent - just pass through the info from OSMD
+      debugPrint(
+        '=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})',
+      );
+      widget.onLoaded?.call(info);
+      debugPrint('=== TRACE: _handleScoreLoaded END');
     }
-
-    // Report to parent - just pass through the info from OSMD
-    debugPrint(
-      '=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})',
-    );
-    widget.onLoaded?.call(info);
-    debugPrint('=== TRACE: _handleScoreLoaded END');
   }
 
   /// Set the current page in a paginated view.
