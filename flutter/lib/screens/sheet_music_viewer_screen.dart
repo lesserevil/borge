@@ -163,13 +163,13 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
             const VerticalDivider(width: 1, color: Colors.white24),
             IconButton(
               icon: const Icon(Icons.zoom_out),
-              onPressed: () => widget.appState.zoom =
+              onPressed: _annotationMode ? null : () => widget.appState.zoom =
                   (widget.appState.zoom - 0.1).clamp(0.5, 3.0),
               tooltip: 'Zoom Out',
             ),
             IconButton(
               icon: const Icon(Icons.zoom_in),
-              onPressed: () => widget.appState.zoom =
+              onPressed: _annotationMode ? null : () => widget.appState.zoom =
                   (widget.appState.zoom + 0.1).clamp(0.5, 3.0),
               tooltip: 'Zoom In',
             ),
