@@ -203,8 +203,8 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
             }
 
             return GestureDetector(
-              onTapUp: (details) => _handleTap(context, details),
-              onHorizontalDragEnd: (details) => _handleSwipe(details),
+              onTapUp: _annotationMode ? null : (details) => _handleTap(context, details),
+              onHorizontalDragEnd: _annotationMode ? null : (details) => _handleSwipe(details),
               child: Stack(
                 children: [
                   // Sheet music display
@@ -214,6 +214,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                       page: page,
                       songName: widget.appState.currentSong?.name ?? "",
                       appState: widget.appState,
+                      annotationMode: _annotationMode,
                       rendererKey: _rendererKey,
                       onHistoryChanged: (canUndo, canRedo) {
                         setState(() {
@@ -438,6 +439,7 @@ class _SheetMusicPage extends StatefulWidget {
   final String songName;
   final AppState appState;
   final GlobalKey? rendererKey;
+  final bool annotationMode;
   final OnHistoryChanged? onHistoryChanged;
   final OnAnnotationAdded? onAnnotationAdded;
   final OnAnnotationRemoved? onAnnotationRemoved;
@@ -450,6 +452,7 @@ class _SheetMusicPage extends StatefulWidget {
     required this.songName,
     required this.appState,
     this.rendererKey,
+    this.annotationMode = false,
     this.onHistoryChanged,
     this.onAnnotationAdded,
     this.onAnnotationRemoved,
@@ -624,6 +627,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
           ValueKey('musicxml-${widget.page.path}-$orientation'),
       musicXml: _musicXmlContent!,
       backgroundColor: Colors.white,
+      annotationMode: widget.annotationMode,
       options: MusicXmlRenderOptions(
         initialPage: widget.page.internalPageNumber,
         currentPage: widget.page.internalPageNumber,

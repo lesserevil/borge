@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -58,6 +59,9 @@ class MusicXmlWebRenderer extends StatefulWidget {
   /// Called when undo/redo history state changes.
   final OnHistoryChanged? onHistoryChanged;
 
+  /// Whether annotation mode is active (enables WebView gesture claiming on Android).
+  final bool annotationMode;
+
   const MusicXmlWebRenderer({
     super.key,
     this.musicXml,
@@ -72,6 +76,7 @@ class MusicXmlWebRenderer extends StatefulWidget {
     this.onAnnotationsCleared,
     this.onAnnotationModeChanged,
     this.onHistoryChanged,
+    this.annotationMode = false,
   }) : assert(
          musicXml != null || musicXmlUrl != null,
          'Either musicXml or musicXmlUrl must be provided',
@@ -479,7 +484,22 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
 
     return Stack(
       children: [
-        WebViewWidget(controller: _controller!),
+        WebViewWidget(
+          controller: _controller!,
+          gestureRecognizers: widget.annotationMode
+              ? <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<VerticalDragGestureRecognizer>(
+                    () => VerticalDragGestureRecognizer(),
+                  ),
+                  Factory<HorizontalDragGestureRecognizer>(
+                    () => HorizontalDragGestureRecognizer(),
+                  ),
+                  Factory<LongPressGestureRecognizer>(
+                    () => LongPressGestureRecognizer(),
+                  ),
+                }
+              : <Factory<OneSequenceGestureRecognizer>>{},
+        ),
         if (_isLoading) _buildLoading(),
         if (_error != null) _buildError(),
       ],

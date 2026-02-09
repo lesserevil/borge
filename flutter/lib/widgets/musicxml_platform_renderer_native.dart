@@ -24,6 +24,7 @@ Widget buildMusicXmlRenderer({
   OnAnnotationsCleared? onAnnotationsCleared,
   OnAnnotationModeChanged? onAnnotationModeChanged,
   OnHistoryChanged? onHistoryChanged,
+  bool annotationMode = false,
 }) {
   return MusicXmlWebRenderer(
     key: key,
@@ -39,5 +40,6 @@ Widget buildMusicXmlRenderer({
     onAnnotationsCleared: onAnnotationsCleared,
     onAnnotationModeChanged: onAnnotationModeChanged,
     onHistoryChanged: onHistoryChanged,
+    annotationMode: annotationMode,
   );
 }
