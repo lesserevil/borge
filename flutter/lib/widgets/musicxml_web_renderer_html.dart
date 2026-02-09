@@ -27,6 +27,11 @@ class MusicXmlWebRendererHtml extends StatefulWidget {
   final OnScoreLoaded? onLoaded;
   final OnError? onError;
   final OnReady? onReady;
+  final OnAnnotationAdded? onAnnotationAdded;
+  final OnAnnotationRemoved? onAnnotationRemoved;
+  final OnAnnotationsCleared? onAnnotationsCleared;
+  final OnAnnotationModeChanged? onAnnotationModeChanged;
+  final OnHistoryChanged? onHistoryChanged;
 
   const MusicXmlWebRendererHtml({
     super.key,
@@ -37,6 +42,11 @@ class MusicXmlWebRendererHtml extends StatefulWidget {
     this.onLoaded,
     this.onError,
     this.onReady,
+    this.onAnnotationAdded,
+    this.onAnnotationRemoved,
+    this.onAnnotationsCleared,
+    this.onAnnotationModeChanged,
+    this.onHistoryChanged,
   });
 
   @override
@@ -162,6 +172,49 @@ class MusicXmlWebRendererHtmlState extends State<MusicXmlWebRendererHtml> {
           });
           widget.onError?.call(errorMsg, errorType);
           break;
+
+        // ── Annotation Events ──
+        case 'annotationAdded':
+          if (payload != null) {
+            final event = AnnotationEvent.fromJson(payload);
+            widget.onAnnotationAdded?.call(event);
+          }
+          break;
+
+        case 'annotationRemoved':
+          if (payload != null) {
+            widget.onAnnotationRemoved?.call(
+              payload['pageIndex'] as int? ?? 0,
+              payload['measureNumber'] as int? ?? 1,
+              payload['remaining'] as int? ?? 0,
+            );
+          }
+          break;
+
+        case 'annotationsCleared':
+          if (payload != null) {
+            widget.onAnnotationsCleared?.call(
+              payload['pageIndex'] as int? ?? -1,
+            );
+          }
+          break;
+
+        case 'annotationModeChanged':
+          if (payload != null) {
+            widget.onAnnotationModeChanged?.call(
+              payload['enabled'] as bool? ?? false,
+            );
+          }
+          break;
+
+        case 'historyChanged':
+          if (payload != null) {
+            widget.onHistoryChanged?.call(
+              payload['canUndo'] as bool? ?? false,
+              payload['canRedo'] as bool? ?? false,
+            );
+          }
+          break;
       }
     } catch (e) {
       debugPrint('Error handling iframe message: $e');
@@ -222,6 +275,65 @@ class MusicXmlWebRendererHtmlState extends State<MusicXmlWebRendererHtml> {
   /// Set the current page in a paginated view.
   void setPage(int page) {
     _sendToIframe('setPage', {'page': page});
+  }
+
+  // ── Annotation Control Methods ──────────────────────────────────
+
+  /// Enable or disable annotation drawing mode.
+  void setAnnotationMode(bool enabled) {
+    _sendToIframe('setAnnotationMode', {'enabled': enabled});
+  }
+
+  /// Set the stroke color and width for drawing annotations.
+  void setAnnotationStyle({String? color, double? width}) {
+    _sendToIframe('setAnnotationStyle', {
+      if (color != null) 'color': color,
+      if (width != null) 'width': width,
+    });
+  }
+
+  /// Load previously saved annotations into the renderer.
+  void loadAnnotations(List<Map<String, dynamic>> annotations) {
+    _sendToIframe('loadAnnotations', {'annotations': annotations});
+  }
+
+  /// Clear annotations for a specific page, or all pages if [pageIndex] is null.
+  void clearAnnotations({int? pageIndex}) {
+    _sendToIframe('clearAnnotations', {'pageIndex': pageIndex});
+  }
+
+  /// Remove the last drawn annotation from a specific page.
+  void removeLastAnnotation(int pageIndex) {
+    _sendToIframe('removeLastAnnotation', {'pageIndex': pageIndex});
+  }
+
+  /// Add a structured annotation symbol to a specific page.
+  void addStructuredAnnotation({
+    required int pageIndex,
+    required String kind,
+    required int measureNumber,
+    required double x,
+    required double y,
+    Map<String, dynamic>? data,
+  }) {
+    _sendToIframe('addStructuredAnnotation', {
+      'pageIndex': pageIndex,
+      'kind': kind,
+      'measureNumber': measureNumber,
+      'x': x,
+      'y': y,
+      'data': data ?? {},
+    });
+  }
+
+  /// Undo the last annotation action.
+  void undo() {
+    _sendToIframe('undo');
+  }
+
+  /// Redo the last undone annotation action.
+  void redo() {
+    _sendToIframe('redo');
   }
 
   @override

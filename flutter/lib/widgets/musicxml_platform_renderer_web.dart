@@ -35,5 +35,10 @@ Widget buildMusicXmlRenderer({
     onLoaded: onLoaded,
     onError: onError,
     onReady: onReady,
+    onAnnotationAdded: onAnnotationAdded,
+    onAnnotationRemoved: onAnnotationRemoved,
+    onAnnotationsCleared: onAnnotationsCleared,
+    onAnnotationModeChanged: onAnnotationModeChanged,
+    onHistoryChanged: onHistoryChanged,
   );
 }

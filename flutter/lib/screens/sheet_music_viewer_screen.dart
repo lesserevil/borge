@@ -12,7 +12,6 @@ import '../services/annotation_exporter.dart';
 import '../services/annotation_repository.dart';
 import '../state/app_state.dart';
 import '../widgets/musicxml_platform_renderer.dart';
-import '../widgets/musicxml_web_renderer.dart';
 
 /// Screen for viewing sheet music pages with navigation.
 class SheetMusicViewerScreen extends StatefulWidget {
@@ -30,8 +29,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
   bool _annotationMode = false;
   bool _canUndo = false;
   bool _canRedo = false;
-  final GlobalKey<MusicXmlWebRendererState> _rendererKey =
-      GlobalKey<MusicXmlWebRendererState>();
+  final GlobalKey _rendererKey = GlobalKey();
 
   // Annotation persistence
   final AnnotationRepository _annotationRepo = AnnotationRepository();
@@ -117,24 +115,25 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
           foregroundColor: Colors.white,
           title: Text(widget.appState.currentSong?.name ?? 'Sheet Music'),
           actions: [
-            // Annotation controls (native platforms only - not supported on web)
-            if (!kIsWeb) ...[
-              if (_annotationMode) ...[
-                IconButton(
-                  icon: const Icon(Icons.undo),
-                  onPressed: _canUndo
-                      ? () => _rendererKey.currentState?.undo()
-                      : null,
-                  tooltip: 'Undo',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.redo),
-                  onPressed: _canRedo
-                      ? () => _rendererKey.currentState?.redo()
-                      : null,
-                  tooltip: 'Redo',
-                ),
-                const VerticalDivider(width: 1, color: Colors.white24),
+            // Annotation controls
+            if (_annotationMode) ...[
+              IconButton(
+                icon: const Icon(Icons.undo),
+                onPressed: _canUndo
+                    ? () => (_rendererKey.currentState as dynamic)?.undo()
+                    : null,
+                tooltip: 'Undo',
+              ),
+              IconButton(
+                icon: const Icon(Icons.redo),
+                onPressed: _canRedo
+                    ? () => (_rendererKey.currentState as dynamic)?.redo()
+                    : null,
+                tooltip: 'Redo',
+              ),
+              const VerticalDivider(width: 1, color: Colors.white24),
+              // Export/import only on native (requires file system)
+              if (!kIsWeb) ...[
                 IconButton(
                   icon: const Icon(Icons.file_upload_outlined),
                   onPressed: _exportAnnotations,
@@ -147,21 +146,21 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                 ),
                 const VerticalDivider(width: 1, color: Colors.white24),
               ],
-              IconButton(
-                icon: Icon(
-                  _annotationMode ? Icons.draw : Icons.draw_outlined,
-                  color: _annotationMode ? Colors.amber : null,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _annotationMode = !_annotationMode;
-                  });
-                  _rendererKey.currentState?.setAnnotationMode(_annotationMode);
-                },
-                tooltip: _annotationMode ? 'Exit Drawing Mode' : 'Drawing Mode',
-              ),
-              const VerticalDivider(width: 1, color: Colors.white24),
             ],
+            IconButton(
+              icon: Icon(
+                _annotationMode ? Icons.draw : Icons.draw_outlined,
+                color: _annotationMode ? Colors.amber : null,
+              ),
+              onPressed: () {
+                setState(() {
+                  _annotationMode = !_annotationMode;
+                });
+                (_rendererKey.currentState as dynamic)?.setAnnotationMode(_annotationMode);
+              },
+              tooltip: _annotationMode ? 'Exit Drawing Mode' : 'Drawing Mode',
+            ),
+            const VerticalDivider(width: 1, color: Colors.white24),
             IconButton(
               icon: const Icon(Icons.zoom_out),
               onPressed: () => widget.appState.zoom =
@@ -328,7 +327,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       'width': 2.5,
     }).toList();
 
-    _rendererKey.currentState?.loadAnnotations(annotations);
+    (_rendererKey.currentState as dynamic)?.loadAnnotations(annotations);
     debugPrint('Loaded ${saved.length} saved annotations for $fileId');
   }
 
@@ -383,7 +382,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       }
 
       // Reload annotations into the renderer
-      _rendererKey.currentState?.clearAnnotations();
+      (_rendererKey.currentState as dynamic)?.clearAnnotations();
       final annotationMaps = imported.map((ann) => <String, dynamic>{
         'svgPath': ann.data,
         'measureNumber': ann.measureNumber,
@@ -392,7 +391,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         'color': '#FF0000',
         'width': 2.5,
       }).toList();
-      _rendererKey.currentState?.loadAnnotations(annotationMaps);
+      (_rendererKey.currentState as dynamic)?.loadAnnotations(annotationMaps);
 
       _showSnackBar('Imported ${imported.length} annotations');
     } catch (e) {
@@ -438,7 +437,7 @@ class _SheetMusicPage extends StatefulWidget {
   final models.Page page;
   final String songName;
   final AppState appState;
-  final GlobalKey<MusicXmlWebRendererState>? rendererKey;
+  final GlobalKey? rendererKey;
   final OnHistoryChanged? onHistoryChanged;
   final OnAnnotationAdded? onAnnotationAdded;
   final OnAnnotationRemoved? onAnnotationRemoved;
