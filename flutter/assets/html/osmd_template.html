@@ -536,27 +536,15 @@
 
         /** Load annotations from Flutter (restore saved annotations) */
         function loadAnnotations(annotations) {
-            // annotations: [{pageIndex, svgPath, measureNumber, x, y, color, width}, ...]
+            // annotations: [{pageIndex, svgPath, measureNumber, x, y, color, width, coordSystem?}, ...]
             storedAnnotations.clear();
             for (const ann of annotations) {
                 const pi = ann.pageIndex || 0;
                 if (!storedAnnotations.has(pi)) {
                     storedAnnotations.set(pi, []);
                 }
-                // Legacy annotations from DB lack coordSystem and origWidth/origHeight.
-                // Tag them so the proportional scaler can use current canvas size.
-                if (!ann.coordSystem) {
-                    const canvas = annotationCanvases.get(pi);
-                    ann.coordSystem = 'pixel';
-                    ann.origWidth = canvas ? canvas.width : null;
-                    ann.origHeight = canvas ? canvas.height : null;
-                }
                 storedAnnotations.get(pi).push(ann);
             }
-
-            // Convert loaded pixel annotations to measure-relative immediately
-            // so they survive future zoom/resize.
-            convertAnnotationsToMeasureRelative();
 
             // Redraw all pages
             for (const [pi] of storedAnnotations) {

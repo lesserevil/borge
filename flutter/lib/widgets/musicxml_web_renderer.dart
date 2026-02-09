@@ -90,6 +90,7 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
   WebViewController? _controller;
   bool _isReady = false;
   bool _isLoading = true;
+  bool _isZoomReload = false;
   String? _error;
   String? _htmlContent;
 
@@ -361,6 +362,14 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
       _loadCompleter!.complete();
     }
 
+    // Skip annotation reload on zoom — JS already has measure-relative
+    // annotations in storedAnnotations that survive re-render.
+    if (_isZoomReload) {
+      _isZoomReload = false;
+      debugPrint('=== TRACE: _handleScoreLoaded END (zoom reload, skipping onLoaded)');
+      return;
+    }
+
     // Report to parent - just pass through the info from OSMD
     debugPrint(
       '=== TRACE: Calling widget.onLoaded callback (pageCount=${info.pageCount})',
@@ -385,7 +394,9 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
     // Update zoom level in JavaScript
     _controller?.runJavaScript('zoomLevel = $zoom;');
 
-    // Reload the FULL document at new zoom
+    // Reload the FULL document at new zoom — but skip annotation reload
+    // since JS already has measure-relative annotations in memory.
+    _isZoomReload = true;
     setState(() {
       _isLoading = true;
     });
