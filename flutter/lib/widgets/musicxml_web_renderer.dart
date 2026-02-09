@@ -151,11 +151,19 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
       final osmdJs = await rootBundle.loadString(
         'assets/js/opensheetmusicdisplay.min.js',
       );
+      final annotationJs = await rootBundle.loadString(
+        'assets/js/osmd_annotations.js',
+      );
 
-      // Replace the script tag with inline JavaScript
-      final htmlWithEmbeddedJs = html.replaceFirst(
+      // Replace script tags with inline JavaScript
+      var htmlWithEmbeddedJs = html.replaceFirst(
         '<script src="opensheetmusicdisplay.min.js"></script>',
         '<script>$osmdJs</script>',
+      );
+
+      htmlWithEmbeddedJs = htmlWithEmbeddedJs.replaceFirst(
+        '<script src="osmd_annotations.js"></script>',
+        '<script>$annotationJs</script>',
       );
 
       setState(() {

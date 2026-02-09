@@ -8,6 +8,9 @@ flutter/.idea/
 flutter/.flutter-plugins
 flutter/.flutter-plugins-dependencies
 
+# Generated JS (canonical source: flutter/assets/js/)
+flutter/web/osmd_annotations.js
+
 # Flutter Desktop
 flutter/linux/flutter/ephemeral/
 flutter/linux/flutter/generated_plugin_registrant.cc

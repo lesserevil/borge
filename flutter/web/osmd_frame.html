@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MusicXML Renderer</title>
     <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.9.0/build/opensheetmusicdisplay.min.js"></script>
+    <script src="osmd_annotations.js"></script>
     <style>
         * {
             margin: 0;
@@ -145,269 +146,24 @@
         let paginationInfo = null;
         let currentPageNumber = 1;
 
-        // ── Annotation State ──────────────────────────────────────────
-        let annotationEnabled = false;
-        let isDrawing = false;
-        let currentStrokePoints = [];
-        let annotationCanvases = new Map();
-        let storedAnnotations = new Map();
-        let strokeColor = '#1A3A6B';
-        let strokeWidth = 2.5;
+        // ── Platform-Specific Hooks for Annotation Module ─────────────
 
-        // ── Undo/Redo History Stack ───────────────────────────────────
-        let undoStack = [];
-        let redoStack = [];
-        const MAX_HISTORY = 100;
-
-        // ── Annotation Canvas Management ──────────────────────────────
-
-        /** Remove all tracked annotation canvases from the DOM and clear the map */
-        function teardownAnnotationCanvases() {
-            for (const [, canvas] of annotationCanvases) {
-                canvas.remove();
-            }
-            annotationCanvases.clear();
-        }
-
-        function getOrCreateAnnotationCanvas(pageDiv, pageIndex) {
-            if (annotationCanvases.has(pageIndex)) {
-                const existing = annotationCanvases.get(pageIndex);
-                if (existing.width !== pageDiv.clientWidth || existing.height !== pageDiv.clientHeight) {
-                    existing.width = pageDiv.clientWidth;
-                    existing.height = pageDiv.clientHeight;
-                    redrawAnnotations(pageIndex);
-                }
-                return existing;
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.className = 'annotation-canvas';
-            canvas.width = pageDiv.clientWidth;
-            canvas.height = pageDiv.clientHeight;
-
-            if (annotationEnabled) {
-                canvas.classList.add('drawing-mode');
-            }
-
-            canvas.addEventListener('pointerdown', (e) => onPointerDown(e, pageIndex));
-            canvas.addEventListener('pointermove', (e) => onPointerMove(e, pageIndex));
-            canvas.addEventListener('pointerup', (e) => onPointerUp(e, pageIndex));
-            canvas.addEventListener('pointercancel', (e) => onPointerUp(e, pageIndex));
-
-            pageDiv.appendChild(canvas);
-            annotationCanvases.set(pageIndex, canvas);
-            return canvas;
-        }
-
-        function setupAnnotationCanvases() {
-            const pages = document.querySelectorAll('div[id^="osmdCanvasPage"]');
-            pages.forEach((pageDiv, index) => {
-                getOrCreateAnnotationCanvas(pageDiv, index);
-            });
-
-            for (const [pageIndex] of storedAnnotations) {
-                redrawAnnotations(pageIndex);
-            }
-        }
-
-        function setAnnotationModeInternal(enabled) {
-            annotationEnabled = enabled;
-            for (const [, canvas] of annotationCanvases) {
-                if (enabled) {
-                    canvas.classList.add('drawing-mode');
-                } else {
-                    canvas.classList.remove('drawing-mode');
-                }
-            }
-
-            // When exiting drawing mode, convert all pixel-space annotations
-            // to measure-relative coordinates for zoom/reflow resilience.
-            if (!enabled) {
-                convertAnnotationsToMeasureRelative();
-            }
-
-            sendToFlutter('annotationModeChanged', { enabled });
-        }
-
-        /**
-         * Convert all annotations still in 'pixel' coord system to 'measure' coords.
-         * Called once when exiting drawing mode.
-         */
-        function convertAnnotationsToMeasureRelative() {
-            for (const [pageIndex, annotations] of storedAnnotations) {
-                for (const ann of annotations) {
-                    if (ann.coordSystem === 'measure') continue; // already converted
-
-                    const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
-                    if (!mBBox || mBBox.w <= 0 || mBBox.h <= 0) continue; // can't convert, leave as pixel
-
-                    // Parse the pixel-space SVG path
-                    const pixelPoints = svgPathToPoints(ann.svgPath);
-                    if (pixelPoints.length < 2) continue;
-
-                    // Convert each point to measure-relative (0-1 within measure bbox)
-                    const relPoints = pixelPoints.map(p => ({
-                        x: (p.x - mBBox.x) / mBBox.w,
-                        y: (p.y - mBBox.y) / mBBox.h,
-                    }));
-
-                    // Use higher precision for normalized coords
-                    ann.svgPath = pointsToSvgPathPrecise(relPoints);
-                    ann.coordSystem = 'measure';
-
-                    // Also update the midpoint x/y to measure-relative
-                    const mid = relPoints[Math.floor(relPoints.length / 2)];
-                    ann.x = mid.x;
-                    ann.y = mid.y;
-                }
-            }
-        }
-
-        /**
-         * Like pointsToSvgPath but with higher decimal precision for normalized coords.
-         */
-        function pointsToSvgPathPrecise(points) {
-            if (points.length === 0) return '';
-            let path = `M ${points[0].x.toFixed(4)} ${points[0].y.toFixed(4)}`;
-            for (let i = 1; i < points.length; i++) {
-                path += ` L ${points[i].x.toFixed(4)} ${points[i].y.toFixed(4)}`;
-            }
-            return path;
-        }
-
-        function setAnnotationStyleInternal(color, width) {
-            if (color) strokeColor = color;
-            if (width) strokeWidth = width;
-        }
-
-        // ── Pointer Event Handlers ────────────────────────────────────
-
-        function onPointerDown(e, pageIndex) {
-            if (!annotationEnabled) return;
-            e.preventDefault();
-            isDrawing = true;
-
-            const canvas = annotationCanvases.get(pageIndex);
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            currentStrokePoints = [{ x, y }];
-
-            const ctx = canvas.getContext('2d');
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.strokeStyle = strokeColor;
-            ctx.lineWidth = strokeWidth;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-        }
-
-        function onPointerMove(e, pageIndex) {
-            if (!isDrawing || !annotationEnabled) return;
-            e.preventDefault();
-
-            const canvas = annotationCanvases.get(pageIndex);
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            currentStrokePoints.push({ x, y });
-
-            const ctx = canvas.getContext('2d');
-            ctx.lineTo(x, y);
-            ctx.stroke();
-        }
-
-        function onPointerUp(e, pageIndex) {
-            if (!isDrawing) return;
-            e.preventDefault();
-            isDrawing = false;
-
-            if (currentStrokePoints.length < 2) {
-                currentStrokePoints = [];
-                return;
-            }
-
-            const canvas = annotationCanvases.get(pageIndex);
-            const midPoint = currentStrokePoints[Math.floor(currentStrokePoints.length / 2)];
-            const measureInfo = findMeasureAtPoint(midPoint.x, midPoint.y, pageIndex);
-
-            // Store the raw pixel SVG path and the canvas size at draw time.
-            // On redraw at a different size, we scale proportionally.
-            const svgPath = pointsToSvgPath(currentStrokePoints);
-
-            const annotation = {
-                svgPath,
-                measureNumber: measureInfo.measureNumber,
-                x: midPoint.x / canvas.width,
-                y: midPoint.y / canvas.height,
-                color: strokeColor,
-                width: strokeWidth,
-                // Starts as pixel coords; converted to measure-relative on exit drawing mode
-                coordSystem: 'pixel',
-                origWidth: canvas.width,
-                origHeight: canvas.height,
+        sendToFlutter = function(eventType, data) {
+            const message = {
+                type: eventType,
+                data: data,
+                frameId: frameId,
             };
-
-            if (!storedAnnotations.has(pageIndex)) {
-                storedAnnotations.set(pageIndex, []);
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage(message, '*');
             }
-            storedAnnotations.get(pageIndex).push(annotation);
+            console.log('OSMD -> Flutter:', message);
+        };
 
-            pushToUndoStack(pageIndex, annotation);
-
-            sendToFlutter('annotationAdded', {
-                pageIndex,
-                measureNumber: measureInfo.measureNumber,
-                svgPath,
-                x: midPoint.x,
-                y: midPoint.y,
-                color: strokeColor,
-                width: strokeWidth,
-            });
-
-            currentStrokePoints = [];
-            redrawAnnotations(pageIndex);
-        }
-
-        // ── SVG Path Generation ───────────────────────────────────────
-
-        function pointsToSvgPath(points) {
-            if (points.length === 0) return '';
-            let path = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-            for (let i = 1; i < points.length; i++) {
-                path += ` L ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}`;
-            }
-            return path;
-        }
-
-        function svgPathToPoints(svgPath) {
-            const points = [];
-            const commands = svgPath.match(/[ML]\s*-?[\d.]+\s+-?[\d.]+/g);
-            if (!commands) return points;
-            for (const cmd of commands) {
-                const nums = cmd.match(/-?[\d.]+/g);
-                if (nums && nums.length >= 2) {
-                    points.push({ x: parseFloat(nums[0]), y: parseFloat(nums[1]) });
-                }
-            }
-            return points;
-        }
-
-        // ── Measure Coordinate Tracking (DOM-based) ─────────────────────
-
-        /**
-         * Get the bounding box of a measure in pixel coordinates
-         * relative to its page div container.
-         * Uses the DOM: .vf-measure elements with id matching the measure number.
-         * Returns {x, y, w, h} or null if not found.
-         */
-        function getMeasureBBox(measureNumber, pageIndex) {
+        getMeasureBBox = function(measureNumber, pageIndex) {
             const pageDiv = document.querySelectorAll('div[id^="osmdCanvasPage"]')[pageIndex];
             if (!pageDiv) return null;
 
-            // OSMD renders .vf-measure elements with id = measure number
             const measureEl = pageDiv.querySelector(`.vf-measure[id="${measureNumber}"]`);
             if (!measureEl) return null;
 
@@ -420,12 +176,9 @@
                 w: measureRect.width,
                 h: measureRect.height,
             };
-        }
+        };
 
-        /**
-         * Find which measure is closest to a point (in page-div-relative pixel coords).
-         */
-        function findMeasureAtPoint(px, py, pageIndex) {
+        findMeasureAtPoint = function(px, py, pageIndex) {
             const pageDiv = document.querySelectorAll('div[id^="osmdCanvasPage"]')[pageIndex];
             if (!pageDiv) return { measureNumber: 1 };
 
@@ -449,302 +202,7 @@
             }
 
             return { measureNumber: closestMeasure };
-        }
-
-        // ── Annotation Rendering ──────────────────────────────────────
-
-        function redrawAnnotations(pageIndex) {
-            const canvas = annotationCanvases.get(pageIndex);
-            if (!canvas) return;
-
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            const annotations = storedAnnotations.get(pageIndex);
-            if (!annotations) return;
-
-            for (const ann of annotations) {
-
-                if (ann.type === 'structured' && ann.kind && STRUCTURED_SYMBOLS[ann.kind]) {
-                    const px = ann.x * canvas.width;
-                    const py = ann.y * canvas.height;
-                    STRUCTURED_SYMBOLS[ann.kind].render(ctx, px, py, ann.data || {});
-                } else if (ann.svgPath) {
-                    if (ann.coordSystem === 'measure') {
-                        // Measure-relative: look up current measure position and scale
-                        const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
-                        if (mBBox) {
-                            drawSvgPathMeasureRelative(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, mBBox);
-                        }
-                    } else {
-                        // Pixel coords: scale proportionally from original canvas size
-                        const scaleX = ann.origWidth ? canvas.width / ann.origWidth : 1;
-                        const scaleY = ann.origHeight ? canvas.height / ann.origHeight : 1;
-                        drawSvgPathScaled(ctx, ann.svgPath, strokeColor, ann.width || strokeWidth, scaleX, scaleY);
-                    }
-                }
-            }
-        }
-
-        /**
-         * Draw an SVG path with proportional scaling.
-         * Points in the path are in original pixel coordinates;
-         * scaleX/scaleY transform them to current canvas size.
-         */
-        function drawSvgPathScaled(ctx, svgPath, color, width, scaleX, scaleY) {
-            const points = svgPathToPoints(svgPath);
-            if (points.length < 2) return;
-
-            ctx.beginPath();
-            ctx.moveTo(points[0].x * scaleX, points[0].y * scaleY);
-            for (let i = 1; i < points.length; i++) {
-                ctx.lineTo(points[i].x * scaleX, points[i].y * scaleY);
-            }
-            ctx.strokeStyle = color;
-            ctx.lineWidth = width;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.stroke();
-        }
-
-        /**
-         * Draw an SVG path stored in measure-relative coordinates.
-         * Points are offsets within the measure bbox (0-1 range).
-         * Scaled to the measure's current pixel position.
-         */
-        function drawSvgPathMeasureRelative(ctx, svgPath, color, width, mBBox) {
-            const points = svgPathToPoints(svgPath);
-            if (points.length < 2) return;
-
-            ctx.beginPath();
-            ctx.moveTo(mBBox.x + points[0].x * mBBox.w, mBBox.y + points[0].y * mBBox.h);
-            for (let i = 1; i < points.length; i++) {
-                ctx.lineTo(mBBox.x + points[i].x * mBBox.w, mBBox.y + points[i].y * mBBox.h);
-            }
-            ctx.strokeStyle = color;
-            ctx.lineWidth = width;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.stroke();
-        }
-
-        function loadAnnotationsInternal(annotations) {
-            storedAnnotations.clear();
-            for (const ann of annotations) {
-                const pi = ann.pageIndex || 0;
-                if (!storedAnnotations.has(pi)) {
-                    storedAnnotations.set(pi, []);
-                }
-                storedAnnotations.get(pi).push(ann);
-            }
-
-            for (const [pi] of storedAnnotations) {
-                redrawAnnotations(pi);
-            }
-        }
-
-        function clearAnnotationsInternal(pageIndex) {
-            if (pageIndex !== undefined && pageIndex !== null) {
-                storedAnnotations.delete(pageIndex);
-                redrawAnnotations(pageIndex);
-            } else {
-                storedAnnotations.clear();
-                for (const [pi] of annotationCanvases) {
-                    redrawAnnotations(pi);
-                }
-            }
-            sendToFlutter('annotationsCleared', { pageIndex: pageIndex ?? -1 });
-        }
-
-        function removeLastAnnotationInternal(pageIndex) {
-            const annotations = storedAnnotations.get(pageIndex);
-            if (annotations && annotations.length > 0) {
-                const removed = annotations.pop();
-                redrawAnnotations(pageIndex);
-                sendToFlutter('annotationRemoved', {
-                    pageIndex,
-                    measureNumber: removed.measureNumber,
-                    remaining: annotations.length,
-                });
-            }
-        }
-
-        // ── Structured Annotation Symbols ─────────────────────────────
-
-        const STRUCTURED_SYMBOLS = {
-            fingerNumber: {
-                render: (ctx, x, y, data) => {
-                    const num = data.value || '1';
-                    ctx.font = 'bold 16px serif';
-                    ctx.fillStyle = data.color || '#0066CC';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(num, x, y);
-                },
-            },
-            dynamicMark: {
-                render: (ctx, x, y, data) => {
-                    const mark = data.value || 'mf';
-                    ctx.font = 'italic bold 14px serif';
-                    ctx.fillStyle = data.color || '#CC0000';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(mark, x, y);
-                },
-            },
-            bowing: {
-                render: (ctx, x, y, data) => {
-                    const type = data.value || 'down';
-                    ctx.strokeStyle = data.color || '#333333';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    if (type === 'down') {
-                        ctx.moveTo(x - 8, y - 10);
-                        ctx.lineTo(x - 8, y + 2);
-                        ctx.lineTo(x + 8, y + 2);
-                        ctx.lineTo(x + 8, y - 10);
-                    } else {
-                        ctx.moveTo(x - 8, y + 6);
-                        ctx.lineTo(x, y - 10);
-                        ctx.lineTo(x + 8, y + 6);
-                    }
-                    ctx.stroke();
-                },
-            },
-            articulation: {
-                render: (ctx, x, y, data) => {
-                    const type = data.value || 'staccato';
-                    ctx.fillStyle = data.color || '#333333';
-                    ctx.strokeStyle = data.color || '#333333';
-                    ctx.lineWidth = 2;
-                    switch (type) {
-                        case 'staccato':
-                            ctx.beginPath();
-                            ctx.arc(x, y, 3, 0, Math.PI * 2);
-                            ctx.fill();
-                            break;
-                        case 'accent':
-                            ctx.beginPath();
-                            ctx.moveTo(x - 8, y - 4);
-                            ctx.lineTo(x + 8, y);
-                            ctx.lineTo(x - 8, y + 4);
-                            ctx.stroke();
-                            break;
-                        case 'tenuto':
-                            ctx.beginPath();
-                            ctx.moveTo(x - 8, y);
-                            ctx.lineTo(x + 8, y);
-                            ctx.stroke();
-                            break;
-                        case 'fermata':
-                            ctx.beginPath();
-                            ctx.arc(x, y - 2, 8, Math.PI, 0);
-                            ctx.stroke();
-                            ctx.beginPath();
-                            ctx.arc(x, y - 2, 2, 0, Math.PI * 2);
-                            ctx.fill();
-                            break;
-                        default:
-                            ctx.beginPath();
-                            ctx.arc(x, y, 3, 0, Math.PI * 2);
-                            ctx.fill();
-                    }
-                },
-            },
         };
-
-        function addStructuredAnnotationInternal(pageIndex, kind, measureNumber, normX, normY, data) {
-            const canvas = annotationCanvases.get(pageIndex);
-            if (!canvas) return;
-
-            const annotation = {
-                type: 'structured',
-                kind,
-                measureNumber,
-                x: normX,
-                y: normY,
-                data: data || {},
-                color: data?.color || strokeColor,
-            };
-
-            if (!storedAnnotations.has(pageIndex)) {
-                storedAnnotations.set(pageIndex, []);
-            }
-            storedAnnotations.get(pageIndex).push(annotation);
-
-            pushToUndoStack(pageIndex, annotation);
-            redrawAnnotations(pageIndex);
-
-            sendToFlutter('annotationAdded', {
-                pageIndex,
-                measureNumber,
-                svgPath: '',
-                x: normX,
-                y: normY,
-                color: annotation.color,
-                width: 0,
-                structured: true,
-                kind,
-                data,
-            });
-        }
-
-        // ── Undo/Redo Functions ───────────────────────────────────────
-
-        function pushToUndoStack(pageIndex, annotation) {
-            undoStack.push({ pageIndex, annotation });
-            if (undoStack.length > MAX_HISTORY) {
-                undoStack.shift();
-            }
-            redoStack = [];
-            notifyHistoryState();
-        }
-
-        function undoAnnotation() {
-            if (undoStack.length === 0) return;
-
-            const entry = undoStack.pop();
-            const { pageIndex, annotation } = entry;
-
-            const annotations = storedAnnotations.get(pageIndex);
-            if (annotations) {
-                const idx = annotations.indexOf(annotation);
-                if (idx !== -1) {
-                    annotations.splice(idx, 1);
-                } else if (annotations.length > 0) {
-                    annotations.pop();
-                }
-                redrawAnnotations(pageIndex);
-            }
-
-            redoStack.push(entry);
-            notifyHistoryState();
-        }
-
-        function redoAnnotation() {
-            if (redoStack.length === 0) return;
-
-            const entry = redoStack.pop();
-            const { pageIndex, annotation } = entry;
-
-            if (!storedAnnotations.has(pageIndex)) {
-                storedAnnotations.set(pageIndex, []);
-            }
-            storedAnnotations.get(pageIndex).push(annotation);
-            redrawAnnotations(pageIndex);
-
-            undoStack.push(entry);
-            notifyHistoryState();
-        }
-
-        function notifyHistoryState() {
-            sendToFlutter('historyChanged', {
-                canUndo: undoStack.length > 0,
-                canRedo: redoStack.length > 0,
-                undoCount: undoStack.length,
-                redoCount: redoStack.length,
-            });
-        }
 
         // Configuration options
         const defaultOptions = {
@@ -1447,23 +905,6 @@
             document.getElementById('error').classList.remove('visible');
         }
 
-        // Communication with Flutter (via postMessage to parent)
-        function sendToFlutter(eventType, data) {
-            const message = {
-                type: eventType,
-                data: data,
-                frameId: frameId,
-            };
-
-            // Post message to parent window (Flutter web app)
-            if (window.parent && window.parent !== window) {
-                window.parent.postMessage(message, '*');
-            }
-
-            // Also log for debugging
-            console.log('OSMD -> Flutter:', message);
-        }
-
         // Handle messages from Flutter
         function handleMessage(event) {
             // Validate origin in production
@@ -1507,22 +948,22 @@
                         break;
                     // ── Annotation Actions ──
                     case 'setAnnotationMode':
-                        setAnnotationModeInternal(payload.enabled);
+                        setAnnotationMode(payload.enabled);
                         break;
                     case 'setAnnotationStyle':
-                        setAnnotationStyleInternal(payload.color, payload.width);
+                        setAnnotationStyle(payload.color, payload.width);
                         break;
                     case 'loadAnnotations':
-                        loadAnnotationsInternal(payload.annotations || []);
+                        loadAnnotations(payload.annotations || []);
                         break;
                     case 'clearAnnotations':
-                        clearAnnotationsInternal(payload.pageIndex);
+                        clearAnnotations(payload.pageIndex);
                         break;
                     case 'removeLastAnnotation':
-                        removeLastAnnotationInternal(payload.pageIndex);
+                        removeLastAnnotation(payload.pageIndex);
                         break;
                     case 'addStructuredAnnotation':
-                        addStructuredAnnotationInternal(
+                        addStructuredAnnotation(
                             payload.pageIndex,
                             payload.kind,
                             payload.measureNumber,

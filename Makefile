@@ -23,6 +23,10 @@ WEB_OUTPUT   := $(FLUTTER_DIR)/build/web/main.dart.js
 APK_OUTPUT   := $(FLUTTER_DIR)/build/app/outputs/flutter-apk/app-release.apk
 PEBBLE_FW    := $(PEBBLE_DIR)/build/borge-companion.pbw
 
+# Shared JS (canonical source -> web copy)
+ANNOTATION_JS_SRC := $(FLUTTER_DIR)/assets/js/osmd_annotations.js
+ANNOTATION_JS_WEB := $(FLUTTER_DIR)/web/osmd_annotations.js
+
 # ----------------------------------------------------------------------
 # Standard Targets (Docker — default)
 # ----------------------------------------------------------------------
@@ -31,6 +35,13 @@ PEBBLE_FW    := $(PEBBLE_DIR)/build/borge-companion.pbw
 deps:
 	@echo "⬇️  Installing dependencies..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get"
+
+# Copy canonical annotation JS to web/ (single source of truth)
+$(ANNOTATION_JS_WEB): $(ANNOTATION_JS_SRC)
+	@cp $< $@
+
+.PHONY: sync-annotation-js
+sync-annotation-js: $(ANNOTATION_JS_WEB)
 
 $(LINUX_BINARY): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
 	@echo "🔨 Building Flutter app for Linux desktop..."
@@ -44,7 +55,7 @@ test:
 	@echo "🧪 Running Flutter tests..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter test"
 
-$(WEB_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
+$(WEB_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS) $(ANNOTATION_JS_WEB)
 	@echo "🌐 Building web app..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter build web --release"
 
@@ -52,7 +63,7 @@ $(WEB_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
 build-web: $(WEB_OUTPUT)
 
 .PHONY: run-web
-run-web:
+run-web: $(ANNOTATION_JS_WEB)
 	@echo "🌐 Serving Flutter app on http://localhost:8080..."
 	@$(DOCKER_COMPOSE) run --rm -p 8080:8080 flutter bash -c "cd flutter && flutter pub get && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0"
 
