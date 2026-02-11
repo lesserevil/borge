@@ -92,13 +92,19 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         widget.appState.goToPage(0);
       } else if (event.logicalKey == LogicalKeyboardKey.end) {
         widget.appState.goToPage(widget.appState.totalPages - 1);
-      } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.equal ||
-          event.logicalKey == LogicalKeyboardKey.add)) {
-        setState(() { _isRendering = true; });
+      } else if (event.logicalKey == LogicalKeyboardKey.equal ||
+          event.logicalKey == LogicalKeyboardKey.add) {
         widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
-      } else if (!_isRendering && (event.logicalKey == LogicalKeyboardKey.minus ||
-          event.logicalKey == LogicalKeyboardKey.underscore)) {
-        setState(() { _isRendering = true; });
+      } else if (event.logicalKey == LogicalKeyboardKey.minus ||
+          event.logicalKey == LogicalKeyboardKey.underscore) {
+        widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
+      } else if (event.logicalKey == LogicalKeyboardKey.gameButtonRight1) {
+        widget.appState.nextPage();
+      } else if (event.logicalKey == LogicalKeyboardKey.gameButtonLeft1) {
+        widget.appState.previousPage();
+      } else if (event.logicalKey == LogicalKeyboardKey.gameButtonRight2) {
+        widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
+      } else if (event.logicalKey == LogicalKeyboardKey.gameButtonLeft2) {
         widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         Navigator.of(context).pop();
