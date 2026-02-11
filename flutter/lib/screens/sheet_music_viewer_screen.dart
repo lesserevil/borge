@@ -77,6 +77,24 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
     super.dispose();
   }
 
+  void _zoomIn() {
+    if (_isRendering || _annotationMode) return;
+    setState(() { _isRendering = true; });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && _isRendering) setState(() { _isRendering = false; });
+    });
+    widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
+  }
+
+  void _zoomOut() {
+    if (_isRendering || _annotationMode) return;
+    setState(() { _isRendering = true; });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && _isRendering) setState(() { _isRendering = false; });
+    });
+    widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
+  }
+
   void _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
       if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
@@ -94,18 +112,18 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
         widget.appState.goToPage(widget.appState.totalPages - 1);
       } else if (event.logicalKey == LogicalKeyboardKey.equal ||
           event.logicalKey == LogicalKeyboardKey.add) {
-        widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
+        _zoomIn();
       } else if (event.logicalKey == LogicalKeyboardKey.minus ||
           event.logicalKey == LogicalKeyboardKey.underscore) {
-        widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
+        _zoomOut();
       } else if (event.logicalKey == LogicalKeyboardKey.gameButtonRight1) {
         widget.appState.nextPage();
       } else if (event.logicalKey == LogicalKeyboardKey.gameButtonLeft1) {
         widget.appState.previousPage();
       } else if (event.logicalKey == LogicalKeyboardKey.gameButtonRight2) {
-        widget.appState.zoom = (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
+        _zoomIn();
       } else if (event.logicalKey == LogicalKeyboardKey.gameButtonLeft2) {
-        widget.appState.zoom = (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
+        _zoomOut();
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         Navigator.of(context).pop();
       }
@@ -177,26 +195,12 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
             const VerticalDivider(width: 1, color: Colors.white24),
             IconButton(
               icon: const Icon(Icons.zoom_out),
-              onPressed: (_annotationMode || _isRendering) ? null : () {
-                setState(() { _isRendering = true; });
-                Future.delayed(const Duration(seconds: 3), () {
-                  if (mounted && _isRendering) setState(() { _isRendering = false; });
-                });
-                widget.appState.zoom =
-                    (widget.appState.zoom - 0.1).clamp(0.4, 3.0);
-              },
+              onPressed: (_annotationMode || _isRendering) ? null : _zoomOut,
               tooltip: 'Zoom Out',
             ),
             IconButton(
               icon: const Icon(Icons.zoom_in),
-              onPressed: (_annotationMode || _isRendering) ? null : () {
-                setState(() { _isRendering = true; });
-                Future.delayed(const Duration(seconds: 3), () {
-                  if (mounted && _isRendering) setState(() { _isRendering = false; });
-                });
-                widget.appState.zoom =
-                    (widget.appState.zoom + 0.1).clamp(0.4, 3.0);
-              },
+              onPressed: (_annotationMode || _isRendering) ? null : _zoomIn,
               tooltip: 'Zoom In',
             ),
             ListenableBuilder(

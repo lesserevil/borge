@@ -138,6 +138,9 @@ void main() {
       // Simulate R2 button press
       await simulateKeyDownEvent(LogicalKeyboardKey.gameButtonRight2);
       await tester.pump();
+      
+      // Pump the 3-second timer for _isRendering reset
+      await tester.pump(const Duration(seconds: 3));
 
       // Verify zoom increased by 0.1
       expect(appState.zoom, closeTo(0.5, 0.01));
@@ -158,6 +161,9 @@ void main() {
       // Simulate L2 button press
       await simulateKeyDownEvent(LogicalKeyboardKey.gameButtonLeft2);
       await tester.pump();
+      
+      // Pump the 3-second timer for _isRendering reset
+      await tester.pump(const Duration(seconds: 3));
 
       // Verify zoom decreased by 0.1
       expect(appState.zoom, closeTo(0.9, 0.01));
@@ -178,6 +184,9 @@ void main() {
       // Simulate R2 button press
       await simulateKeyDownEvent(LogicalKeyboardKey.gameButtonRight2);
       await tester.pump();
+      
+      // Pump the 3-second timer for _isRendering reset
+      await tester.pump(const Duration(seconds: 3));
 
       // Verify zoom unchanged
       expect(appState.zoom, 3.0);
@@ -198,6 +207,9 @@ void main() {
       // Simulate L2 button press
       await simulateKeyDownEvent(LogicalKeyboardKey.gameButtonLeft2);
       await tester.pump();
+      
+      // Pump the 3-second timer for _isRendering reset
+      await tester.pump(const Duration(seconds: 3));
 
       // Verify zoom unchanged
       expect(appState.zoom, 0.4);
