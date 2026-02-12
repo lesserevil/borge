@@ -101,6 +101,55 @@ function getOrCreateAnnotationCanvas(pageDiv, pageIndex) {
     return canvas;
 }
 
+/**
+ * After zoom/reflow, measures may move to different OSMD pages.
+ * Re-assign annotations to the correct page index based on where
+ * their measure currently lives in the OSMD layout.
+ * Uses 0-based page indices (matching storedAnnotations keys).
+ */
+function rebucketAnnotationsByCurrentPage() {
+    // Collect all annotations from all pages
+    const allAnnotations = [];
+    for (const [pageIndex, annotations] of storedAnnotations) {
+        for (const ann of annotations) {
+            allAnnotations.push({ ann: ann, oldPage: pageIndex });
+        }
+    }
+    if (allAnnotations.length === 0) return;
+
+    // Find the current page for each annotation's measure
+    // getMeasureBBox tries a specific page - we need to search all pages
+    const pageCount = document.querySelectorAll('div[id^="osmdCanvasPage"]').length;
+    const rebucketed = new Map();
+
+    for (const { ann } of allAnnotations) {
+        let foundPage = -1;
+        // Search all pages for this measure
+        for (let p = 0; p < pageCount; p++) {
+            const bbox = getMeasureBBox(ann.measureNumber, p);
+            if (bbox && bbox.w > 0 && bbox.h > 0) {
+                foundPage = p;
+                break;
+            }
+        }
+        // If measure not found on any page, keep original page
+        if (foundPage < 0) {
+            // Fall back to first page
+            foundPage = 0;
+        }
+        if (!rebucketed.has(foundPage)) {
+            rebucketed.set(foundPage, []);
+        }
+        rebucketed.get(foundPage).push(ann);
+    }
+
+    // Replace storedAnnotations with rebucketed version
+    storedAnnotations.clear();
+    for (const [pageIndex, annotations] of rebucketed) {
+        storedAnnotations.set(pageIndex, annotations);
+    }
+}
+
 /** Create annotation canvases for all rendered OSMD pages */
 function setupAnnotationCanvases() {
     teardownAnnotationCanvases();
@@ -109,6 +158,9 @@ function setupAnnotationCanvases() {
     pages.forEach(function(pageDiv, index) {
         getOrCreateAnnotationCanvas(pageDiv, index);
     });
+
+    // Re-bucket annotations by current page after zoom/reflow
+    rebucketAnnotationsByCurrentPage();
 
     try {
         for (const [pageIndex] of storedAnnotations) {
