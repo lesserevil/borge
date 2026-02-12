@@ -143,6 +143,26 @@ function setAnnotationMode(enabled) {
     // to measure-relative coordinates for zoom/reflow resilience.
     if (!enabled) {
         convertAnnotationsToMeasureRelative();
+        
+        // Send converted annotations back to Flutter for DB update
+        const converted = [];
+        for (const [pageIndex, annotations] of storedAnnotations) {
+            for (const ann of annotations) {
+                if (ann.coordSystem === 'measure') {
+                    converted.push({
+                        pageIndex: pageIndex,
+                        measureNumber: ann.measureNumber,
+                        svgPath: ann.svgPath,
+                        x: ann.x,
+                        y: ann.y,
+                        coordSystem: 'measure'
+                    });
+                }
+            }
+        }
+        if (converted.length > 0) {
+            sendToFlutter('annotationsConverted', { annotations: converted });
+        }
     }
 
     sendToFlutter('annotationModeChanged', { enabled: enabled });

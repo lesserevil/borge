@@ -133,6 +133,17 @@ class AnnotationRepository {
     );
   }
 
+  /// Update annotation data (svgPath, x, y) for an existing annotation.
+  Future<void> updateData(String id, String data, double x, double y) async {
+    final db = await database;
+    await db.update(
+      _tableName,
+      {'data': data, 'x': x, 'y': y},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   /// Count annotations for a specific file.
   Future<int> countByFileId(String fileId) async {
     final db = await database;

@@ -32,6 +32,7 @@ class MusicXmlWebRendererHtml extends StatefulWidget {
   final OnAnnotationsCleared? onAnnotationsCleared;
   final OnAnnotationModeChanged? onAnnotationModeChanged;
   final OnHistoryChanged? onHistoryChanged;
+  final OnAnnotationsConverted? onAnnotationsConverted;
 
   const MusicXmlWebRendererHtml({
     super.key,
@@ -47,6 +48,7 @@ class MusicXmlWebRendererHtml extends StatefulWidget {
     this.onAnnotationsCleared,
     this.onAnnotationModeChanged,
     this.onHistoryChanged,
+    this.onAnnotationsConverted,
   });
 
   @override
@@ -213,6 +215,15 @@ class MusicXmlWebRendererHtmlState extends State<MusicXmlWebRendererHtml> {
               payload['canUndo'] as bool? ?? false,
               payload['canRedo'] as bool? ?? false,
             );
+          }
+          break;
+
+        case 'annotationsConverted':
+          if (payload != null && payload['annotations'] != null) {
+            final annotations = (payload['annotations'] as List)
+                .map((a) => Map<String, dynamic>.from(a as Map))
+                .toList();
+            widget.onAnnotationsConverted?.call(annotations);
           }
           break;
       }

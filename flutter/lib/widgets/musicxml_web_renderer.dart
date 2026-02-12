@@ -59,6 +59,9 @@ class MusicXmlWebRenderer extends StatefulWidget {
   /// Called when undo/redo history state changes.
   final OnHistoryChanged? onHistoryChanged;
 
+  /// Called when annotations are converted to measure-relative coordinates.
+  final OnAnnotationsConverted? onAnnotationsConverted;
+
   /// Whether annotation mode is active (enables WebView gesture claiming on Android).
   final bool annotationMode;
 
@@ -76,6 +79,7 @@ class MusicXmlWebRenderer extends StatefulWidget {
     this.onAnnotationsCleared,
     this.onAnnotationModeChanged,
     this.onHistoryChanged,
+    this.onAnnotationsConverted,
     this.annotationMode = false,
   }) : assert(
          musicXml != null || musicXmlUrl != null,
@@ -307,6 +311,15 @@ class MusicXmlWebRendererState extends State<MusicXmlWebRenderer> {
               payload['canUndo'] as bool? ?? false,
               payload['canRedo'] as bool? ?? false,
             );
+          }
+          break;
+
+        case 'annotationsConverted':
+          if (payload != null && payload['annotations'] != null) {
+            final annotations = (payload['annotations'] as List)
+                .map((a) => Map<String, dynamic>.from(a as Map))
+                .toList();
+            widget.onAnnotationsConverted?.call(annotations);
           }
           break;
 

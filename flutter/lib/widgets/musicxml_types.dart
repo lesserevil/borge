@@ -98,6 +98,7 @@ typedef OnAnnotationRemoved =
 typedef OnAnnotationsCleared = void Function(int pageIndex);
 typedef OnAnnotationModeChanged = void Function(bool enabled);
 typedef OnHistoryChanged = void Function(bool canUndo, bool canRedo);
+typedef OnAnnotationsConverted = void Function(List<Map<String, dynamic>> annotations);
 
 /// Data from an annotation event sent from JavaScript.
 class AnnotationEvent {

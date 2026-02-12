@@ -255,6 +255,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
                       onAnnotationAdded: _handleAnnotationAdded,
                       onAnnotationRemoved: _handleAnnotationRemoved,
                       onAnnotationsCleared: _handleAnnotationsCleared,
+                      onAnnotationsConverted: _handleAnnotationsConverted,
                       onScoreLoaded: _loadSavedAnnotations,
                     ),
                   ),
@@ -331,6 +332,23 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
     _annotationRepo.deleteByFileId(fileId);
     _annotationIdsByMeasure.clear();
     debugPrint('All annotations cleared for file: $fileId');
+  }
+
+  void _handleAnnotationsConverted(List<Map<String, dynamic>> annotations) {
+    for (final ann in annotations) {
+      final measureNumber = ann['measureNumber'] as int;
+      final svgPath = ann['svgPath'] as String;
+      final x = (ann['x'] as num).toDouble();
+      final y = (ann['y'] as num).toDouble();
+      
+      final ids = _annotationIdsByMeasure[measureNumber];
+      if (ids == null || ids.isEmpty) continue;
+      
+      for (final id in ids) {
+        _annotationRepo.updateData(id, svgPath, x, y);
+      }
+    }
+    debugPrint('Updated ${annotations.length} annotations with measure-relative coords');
   }
 
   Future<void> _loadSavedAnnotations() async {
@@ -474,6 +492,7 @@ class _SheetMusicPage extends StatefulWidget {
   final OnAnnotationAdded? onAnnotationAdded;
   final OnAnnotationRemoved? onAnnotationRemoved;
   final OnAnnotationsCleared? onAnnotationsCleared;
+  final OnAnnotationsConverted? onAnnotationsConverted;
   final VoidCallback? onScoreLoaded;
 
   const _SheetMusicPage({
@@ -487,6 +506,7 @@ class _SheetMusicPage extends StatefulWidget {
     this.onAnnotationAdded,
     this.onAnnotationRemoved,
     this.onAnnotationsCleared,
+    this.onAnnotationsConverted,
     this.onScoreLoaded,
   });
 
@@ -687,6 +707,7 @@ class _SheetMusicPageState extends State<_SheetMusicPage> {
       onAnnotationAdded: widget.onAnnotationAdded,
       onAnnotationRemoved: widget.onAnnotationRemoved,
       onAnnotationsCleared: widget.onAnnotationsCleared,
+      onAnnotationsConverted: widget.onAnnotationsConverted,
     );
   }
 
