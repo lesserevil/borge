@@ -279,7 +279,9 @@
                 sendToFlutter('loaded', scoreInfo);
 
                 // Set up annotation canvas overlays after render
-                setupAnnotationCanvases();
+                requestAnimationFrame(function() {
+                    setupAnnotationCanvases();
+                });
 
             } catch (error) {
                 hideLoading();
@@ -379,7 +381,7 @@
             if (!osmd || !osmd.Sheet || !osmd.Sheet.sourceData) return;
 
             const firstVisibleMeasure = getFirstVisibleMeasure();
-            zoomLevel = Math.max(0.4, Math.min(2.0, zoom));
+            zoomLevel = Math.max(0.4, Math.min(3.0, zoom));
 
             await loadMusicXml(osmd.Sheet.sourceData);
 
@@ -416,7 +418,7 @@
                         break;
                     case 'load':
                         if (payload.zoom != null) {
-                            zoomLevel = Math.max(0.4, Math.min(2.0, payload.zoom));
+                            zoomLevel = Math.max(0.4, Math.min(3.0, payload.zoom));
                         }
                         loadMusicXml(payload.xml || payload);
                         break;
