@@ -147,7 +147,8 @@
                     const pageDiv = document.querySelectorAll('div[id^="osmdCanvasPage"]')[pageIndex];
                     if (!pageDiv) return null;
 
-                    const scale = (pageDiv.clientWidth / (page.pageWidth || pageDiv.clientWidth)) || 1;
+                    const scale = pageDiv.clientWidth / page.boundingBox.size.width;
+
                     return {
                         x: absPos.x * scale,
                         y: absPos.y * scale,
@@ -172,6 +173,8 @@
             const pageDiv = document.querySelectorAll('div[id^="osmdCanvasPage"]')[pageIndex];
             if (!pageDiv) return { measureNumber: 1 };
 
+            const scale = pageDiv.clientWidth / page.boundingBox.size.width;
+
             let closestMeasure = 1;
             let closestDistance = Infinity;
 
@@ -187,7 +190,7 @@
                     const size = bbox.size;
                     if (!absPos || !size) continue;
 
-                    const scale = (pageDiv.clientWidth / (page.pageWidth || pageDiv.clientWidth)) || 1;
+                    // Scale OSMD coords to pixel coords using page bounding box
                     const mx = absPos.x * scale;
                     const my = absPos.y * scale;
                     const mw = size.width * scale;

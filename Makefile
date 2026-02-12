@@ -14,6 +14,7 @@ DOCKER_PEBBLE  := $(DOCKER_COMPOSE) run --rm pebble
 
 # Source file sets (used for change detection)
 FLUTTER_SRCS := $(shell find $(FLUTTER_DIR)/lib -type f -name '*.dart' 2>/dev/null)
+FLUTTER_ASSETS := $(shell find $(FLUTTER_DIR)/assets -type f 2>/dev/null)
 FLUTTER_DEPS := $(FLUTTER_DIR)/pubspec.yaml $(FLUTTER_DIR)/pubspec.lock
 PEBBLE_SRCS  := $(shell find $(PEBBLE_DIR)/src -type f 2>/dev/null)
 
@@ -43,7 +44,7 @@ $(ANNOTATION_JS_WEB): $(ANNOTATION_JS_SRC)
 .PHONY: sync-annotation-js
 sync-annotation-js: $(ANNOTATION_JS_WEB)
 
-$(LINUX_BINARY): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
+$(LINUX_BINARY): $(FLUTTER_DEPS) $(FLUTTER_SRCS) $(FLUTTER_ASSETS)
 	@echo "🔨 Building Flutter app for Linux desktop..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter build linux --release"
 
@@ -55,7 +56,7 @@ test:
 	@echo "🧪 Running Flutter tests..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter test"
 
-$(WEB_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS) $(ANNOTATION_JS_WEB)
+$(WEB_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS) $(FLUTTER_ASSETS) $(ANNOTATION_JS_WEB)
 	@echo "🌐 Building web app..."
 	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter build web --release"
 
@@ -67,9 +68,9 @@ run-web: $(ANNOTATION_JS_WEB)
 	@echo "🌐 Serving Flutter app on http://localhost:8080..."
 	@$(DOCKER_COMPOSE) run --rm -p 8080:8080 flutter bash -c "cd flutter && flutter pub get && flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0"
 
-$(APK_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS)
+$(APK_OUTPUT): $(FLUTTER_DEPS) $(FLUTTER_SRCS) $(FLUTTER_ASSETS) $(ANNOTATION_JS_WEB)
 	@echo "📱 Building Android APK..."
-	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter pub get && flutter build apk --release"
+	@$(DOCKER_FLUTTER) bash -c "cd flutter && flutter clean && flutter pub get && flutter build apk --release"
 
 .PHONY: build-apk
 build-apk: $(APK_OUTPUT)
