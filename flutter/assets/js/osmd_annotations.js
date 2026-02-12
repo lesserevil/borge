@@ -442,6 +442,9 @@ function loadAnnotations(annotations) {
         storedAnnotations.get(pi).push(ann);
     }
 
+    // Convert any pixel-space annotations to measure-relative for zoom resilience
+    convertAnnotationsToMeasureRelative();
+
     for (const [pi] of storedAnnotations) {
         redrawAnnotations(pi);
     }

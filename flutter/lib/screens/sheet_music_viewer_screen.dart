@@ -351,6 +351,18 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
     debugPrint('Updated ${annotations.length} annotations with measure-relative coords');
   }
 
+  /// Detect whether SVG path data is in pixel coordinates or measure-relative (0-1) range.
+  /// Measure-relative paths from convertAnnotationsToMeasureRelative have coords in 0-1 range.
+  /// Pixel-space paths have coords in canvas pixel range (typically 100+).
+  String _detectCoordSystem(String svgPath) {
+    final match = RegExp(r'M\s*(-?[\d.]+)\s+(-?[\d.]+)').firstMatch(svgPath);
+    if (match == null) return 'pixel';
+    final x = double.tryParse(match.group(1)!) ?? 0;
+    final y = double.tryParse(match.group(2)!) ?? 0;
+    // Measure-relative coords are normalized 0-1 (with some tolerance for near-edge annotations)
+    return (x.abs() <= 2.0 && y.abs() <= 2.0) ? 'measure' : 'pixel';
+  }
+
   Future<void> _loadSavedAnnotations() async {
     if (kIsWeb) return;
 
@@ -374,6 +386,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
       'y': ann.y,
       'color': '#1A3A6B',
       'width': 2.5,
+      'coordSystem': _detectCoordSystem(ann.data),
     }).toList();
 
     (_rendererKey.currentState as dynamic)?.loadAnnotations(annotations);
