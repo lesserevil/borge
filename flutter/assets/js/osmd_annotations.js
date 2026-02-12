@@ -20,13 +20,13 @@ var annotationEnabled = false;       // Drawing mode toggle
 var isDrawing = false;               // Currently drawing a stroke
 var currentStrokePoints = [];        // Points in the current stroke
 var annotationCanvases = new Map();  // pageIndex -> canvas element
-var storedAnnotations = new Map();   // pageIndex -> [{svgPath, measureNumber, x, y}, ...]
+var storedAnnotations = [];   // [{svgPath, measureNumber, x, y, ...}, ...] flat array, keyed by measureNumber
 var strokeColor = '#FF0000';
 var strokeWidth = 2.5;
 
 // ── Undo/Redo History Stack ───────────────────────────────────────────
-var undoStack = [];   // [{pageIndex, annotation}, ...]
-var redoStack = [];   // [{pageIndex, annotation}, ...]
+var undoStack = [];   // [annotation, ...] (direct references)
+var redoStack = [];   // [annotation, ...] (direct references)
 var MAX_HISTORY = 100;
 
 // ── Platform-Specific Hooks (MUST be set by host HTML) ───────────────
@@ -102,51 +102,48 @@ function getOrCreateAnnotationCanvas(pageDiv, pageIndex) {
 }
 
 /**
- * After zoom/reflow, measures may move to different OSMD pages.
- * Re-assign annotations to the correct page index based on where
- * their measure currently lives in the OSMD layout.
- * Uses 0-based page indices (matching storedAnnotations keys).
+ * Find which page currently contains a given measure number.
+ * Returns {pageIndex, bbox} or null if measure not found on any page.
  */
-function rebucketAnnotationsByCurrentPage() {
-    // Collect all annotations from all pages
-    const allAnnotations = [];
-    for (const [pageIndex, annotations] of storedAnnotations) {
-        for (const ann of annotations) {
-            allAnnotations.push({ ann: ann, oldPage: pageIndex });
+function findPageForMeasure(measureNumber) {
+    const pageCount = annotationCanvases.size;
+    for (let p = 0; p < pageCount; p++) {
+        const bbox = getMeasureBBox(measureNumber, p);
+        if (bbox && bbox.w > 0 && bbox.h > 0) {
+            return { pageIndex: p, bbox: bbox };
         }
     }
-    if (allAnnotations.length === 0) return;
+    return null;
+}
 
-    // Find the current page for each annotation's measure
-    // getMeasureBBox tries a specific page - we need to search all pages
-    const pageCount = document.querySelectorAll('div[id^="osmdCanvasPage"]').length;
-    const rebucketed = new Map();
-
-    for (const { ann } of allAnnotations) {
-        let foundPage = -1;
-        // Search all pages for this measure
-        for (let p = 0; p < pageCount; p++) {
-            const bbox = getMeasureBBox(ann.measureNumber, p);
-            if (bbox && bbox.w > 0 && bbox.h > 0) {
-                foundPage = p;
-                break;
+/**
+ * Clear all canvases and redraw every annotation on its correct page.
+ * Called after zoom/reflow or global annotation changes.
+ */
+function redrawAllAnnotations() {
+    for (const [, canvas] of annotationCanvases) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    for (const ann of storedAnnotations) {
+        const loc = findPageForMeasure(ann.measureNumber);
+        if (!loc) continue;
+        const canvas = annotationCanvases.get(loc.pageIndex);
+        if (!canvas) continue;
+        const ctx = canvas.getContext('2d');
+        if (ann.type === 'structured' && ann.kind && STRUCTURED_SYMBOLS[ann.kind]) {
+            const px = ann.x * canvas.width;
+            const py = ann.y * canvas.height;
+            STRUCTURED_SYMBOLS[ann.kind].render(ctx, px, py, ann.data || {});
+        } else if (ann.svgPath) {
+            if (ann.coordSystem === 'measure') {
+                drawSvgPathMeasureRelative(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, loc.bbox);
+            } else {
+                const scaleX = ann.origWidth ? canvas.width / ann.origWidth : 1;
+                const scaleY = ann.origHeight ? canvas.height / ann.origHeight : 1;
+                drawSvgPathScaled(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, scaleX, scaleY);
             }
         }
-        // If measure not found on any page, keep original page
-        if (foundPage < 0) {
-            // Fall back to first page
-            foundPage = 0;
-        }
-        if (!rebucketed.has(foundPage)) {
-            rebucketed.set(foundPage, []);
-        }
-        rebucketed.get(foundPage).push(ann);
-    }
-
-    // Replace storedAnnotations with rebucketed version
-    storedAnnotations.clear();
-    for (const [pageIndex, annotations] of rebucketed) {
-        storedAnnotations.set(pageIndex, annotations);
     }
 }
 
@@ -154,22 +151,11 @@ function rebucketAnnotationsByCurrentPage() {
 function setupAnnotationCanvases() {
     teardownAnnotationCanvases();
     const pages = document.querySelectorAll('div[id^="osmdCanvasPage"]');
-    sendToFlutter('debug', { msg: 'setupAnnotationCanvases', pageCount: pages.length, storedSize: storedAnnotations.size });
+    sendToFlutter('debug', { msg: 'setupAnnotationCanvases', pageCount: pages.length, storedSize: storedAnnotations.length });
     pages.forEach(function(pageDiv, index) {
         getOrCreateAnnotationCanvas(pageDiv, index);
     });
-
-    // Re-bucket annotations by current page after zoom/reflow
-    rebucketAnnotationsByCurrentPage();
-
-    try {
-        for (const [pageIndex] of storedAnnotations) {
-            sendToFlutter('debug', { msg: 'redrawing page', pageIndex: pageIndex });
-            redrawAnnotations(pageIndex);
-        }
-    } catch (err) {
-        sendToFlutter('debug', { msg: 'redraw error', error: err.message, stack: err.stack });
-    }
+    redrawAllAnnotations();
 }
 
 // ── Annotation Mode Control ───────────────────────────────────────────
@@ -198,18 +184,17 @@ function setAnnotationMode(enabled) {
         
         // Send converted annotations back to Flutter for DB update
         const converted = [];
-        for (const [pageIndex, annotations] of storedAnnotations) {
-            for (const ann of annotations) {
-                if (ann.coordSystem === 'measure') {
-                    converted.push({
-                        pageIndex: pageIndex,
-                        measureNumber: ann.measureNumber,
-                        svgPath: ann.svgPath,
-                        x: ann.x,
-                        y: ann.y,
-                        coordSystem: 'measure'
-                    });
-                }
+        for (const ann of storedAnnotations) {
+            if (ann.coordSystem === 'measure') {
+                const loc = findPageForMeasure(ann.measureNumber);
+                converted.push({
+                    pageIndex: loc ? loc.pageIndex : 0,
+                    measureNumber: ann.measureNumber,
+                    svgPath: ann.svgPath,
+                    x: ann.x,
+                    y: ann.y,
+                    coordSystem: 'measure'
+                });
             }
         }
         if (converted.length > 0) {
@@ -302,12 +287,9 @@ function onPointerUp(e, pageIndex) {
         origHeight: canvas.height
     };
 
-    if (!storedAnnotations.has(pageIndex)) {
-        storedAnnotations.set(pageIndex, []);
-    }
-    storedAnnotations.get(pageIndex).push(annotation);
+    storedAnnotations.push(annotation);
 
-    pushToUndoStack(pageIndex, annotation);
+    pushToUndoStack(annotation);
 
     sendToFlutter('annotationAdded', {
         pageIndex: pageIndex,
@@ -367,35 +349,31 @@ function svgPathToPoints(svgPath) {
  * Called once when exiting drawing mode.
  */
 function convertAnnotationsToMeasureRelative() {
-    for (const [pageIndex, annotations] of storedAnnotations) {
-        for (var i = 0; i < annotations.length; i++) {
-            const ann = annotations[i];
-            if (ann.coordSystem === 'measure') continue; // already converted
+    for (var i = 0; i < storedAnnotations.length; i++) {
+        const ann = storedAnnotations[i];
+        if (ann.coordSystem === 'measure') continue;
 
-            const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
-            if (!mBBox || mBBox.w <= 0 || mBBox.h <= 0) continue; // can't convert, leave as pixel
+        const loc = findPageForMeasure(ann.measureNumber);
+        if (!loc) continue;
+        const mBBox = loc.bbox;
+        if (mBBox.w <= 0 || mBBox.h <= 0) continue;
 
-            // Parse the pixel-space SVG path
-            const pixelPoints = svgPathToPoints(ann.svgPath);
-            if (pixelPoints.length < 2) continue;
+        const pixelPoints = svgPathToPoints(ann.svgPath);
+        if (pixelPoints.length < 2) continue;
 
-            // Convert each point to measure-relative (0-1 within measure bbox)
-            const relPoints = pixelPoints.map(function(p) {
-                return {
-                    x: (p.x - mBBox.x) / mBBox.w,
-                    y: (p.y - mBBox.y) / mBBox.h
-                };
-            });
+        const relPoints = pixelPoints.map(function(p) {
+            return {
+                x: (p.x - mBBox.x) / mBBox.w,
+                y: (p.y - mBBox.y) / mBBox.h
+            };
+        });
 
-            // Use higher precision for normalized coords
-            ann.svgPath = pointsToSvgPathPrecise(relPoints);
-            ann.coordSystem = 'measure';
+        ann.svgPath = pointsToSvgPathPrecise(relPoints);
+        ann.coordSystem = 'measure';
 
-            // Also update the midpoint x/y to measure-relative
-            const mid = relPoints[Math.floor(relPoints.length / 2)];
-            ann.x = mid.x;
-            ann.y = mid.y;
-        }
+        const mid = relPoints[Math.floor(relPoints.length / 2)];
+        ann.x = mid.x;
+        ann.y = mid.y;
     }
 }
 
@@ -405,17 +383,12 @@ function convertAnnotationsToMeasureRelative() {
 function redrawAnnotations(pageIndex) {
     const canvas = annotationCanvases.get(pageIndex);
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const annotations = storedAnnotations.get(pageIndex);
-    if (!annotations) return;
-
-    sendToFlutter('debug', { msg: 'redraw', pageIndex: pageIndex, count: annotations.length, canvasW: canvas.width, canvasH: canvas.height });
-
-    for (var i = 0; i < annotations.length; i++) {
-        const ann = annotations[i];
+    for (const ann of storedAnnotations) {
+        const loc = findPageForMeasure(ann.measureNumber);
+        if (!loc || loc.pageIndex !== pageIndex) continue;
 
         if (ann.type === 'structured' && ann.kind && STRUCTURED_SYMBOLS[ann.kind]) {
             const px = ann.x * canvas.width;
@@ -423,15 +396,10 @@ function redrawAnnotations(pageIndex) {
             STRUCTURED_SYMBOLS[ann.kind].render(ctx, px, py, ann.data || {});
         } else if (ann.svgPath) {
             if (ann.coordSystem === 'measure') {
-                const mBBox = getMeasureBBox(ann.measureNumber, pageIndex);
-                sendToFlutter('debug', { msg: 'redraw-measure', i: i, measure: ann.measureNumber, hasBBox: !!mBBox, bbox: mBBox });
-                if (mBBox) {
-                    drawSvgPathMeasureRelative(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, mBBox);
-                }
+                drawSvgPathMeasureRelative(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, loc.bbox);
             } else {
                 const scaleX = ann.origWidth ? canvas.width / ann.origWidth : 1;
                 const scaleY = ann.origHeight ? canvas.height / ann.origHeight : 1;
-                sendToFlutter('debug', { msg: 'redraw-pixel', i: i, coordSystem: ann.coordSystem, origW: ann.origWidth, origH: ann.origHeight, scaleX: scaleX, scaleY: scaleY });
                 drawSvgPathScaled(ctx, ann.svgPath, ann.color || strokeColor, ann.width || strokeWidth, scaleX, scaleY);
             }
         }
@@ -484,31 +452,24 @@ function drawSvgPathMeasureRelative(ctx, svgPath, color, width, mBBox) {
 
 /** Load previously saved annotations into the renderer */
 function loadAnnotations(annotations) {
-    storedAnnotations.clear();
+    storedAnnotations = [];
     for (var i = 0; i < annotations.length; i++) {
-        const ann = annotations[i];
-        const pi = ann.pageIndex || 0;
-        if (!storedAnnotations.has(pi)) {
-            storedAnnotations.set(pi, []);
-        }
-        storedAnnotations.get(pi).push(ann);
+        storedAnnotations.push(annotations[i]);
     }
-
-    // Convert any pixel-space annotations to measure-relative for zoom resilience
     convertAnnotationsToMeasureRelative();
-
-    for (const [pi] of storedAnnotations) {
-        redrawAnnotations(pi);
-    }
+    redrawAllAnnotations();
 }
 
 /** Clear annotations for a specific page, or all pages if pageIndex is null */
 function clearAnnotations(pageIndex) {
     if (pageIndex !== undefined && pageIndex !== null) {
-        storedAnnotations.delete(pageIndex);
+        storedAnnotations = storedAnnotations.filter(function(ann) {
+            const loc = findPageForMeasure(ann.measureNumber);
+            return !loc || loc.pageIndex !== pageIndex;
+        });
         redrawAnnotations(pageIndex);
     } else {
-        storedAnnotations.clear();
+        storedAnnotations = [];
         for (const [pi] of annotationCanvases) {
             redrawAnnotations(pi);
         }
@@ -518,14 +479,13 @@ function clearAnnotations(pageIndex) {
 
 /** Remove the last drawn annotation from a specific page */
 function removeLastAnnotation(pageIndex) {
-    const annotations = storedAnnotations.get(pageIndex);
-    if (annotations && annotations.length > 0) {
-        const removed = annotations.pop();
-        redrawAnnotations(pageIndex);
+    if (storedAnnotations.length > 0) {
+        const removed = storedAnnotations.pop();
+        redrawAllAnnotations();
         sendToFlutter('annotationRemoved', {
             pageIndex: pageIndex,
             measureNumber: removed.measureNumber,
-            remaining: annotations.length
+            remaining: storedAnnotations.length
         });
     }
 }
@@ -630,12 +590,9 @@ function addStructuredAnnotation(pageIndex, kind, measureNumber, normX, normY, d
         color: (data && data.color) || strokeColor
     };
 
-    if (!storedAnnotations.has(pageIndex)) {
-        storedAnnotations.set(pageIndex, []);
-    }
-    storedAnnotations.get(pageIndex).push(annotation);
+    storedAnnotations.push(annotation);
 
-    pushToUndoStack(pageIndex, annotation);
+    pushToUndoStack(annotation);
     redrawAnnotations(pageIndex);
 
     sendToFlutter('annotationAdded', {
@@ -654,8 +611,8 @@ function addStructuredAnnotation(pageIndex, kind, measureNumber, normX, normY, d
 
 // ── Undo/Redo Functions ───────────────────────────────────────────────
 
-function pushToUndoStack(pageIndex, annotation) {
-    undoStack.push({ pageIndex: pageIndex, annotation: annotation });
+function pushToUndoStack(annotation) {
+    undoStack.push(annotation);
     if (undoStack.length > MAX_HISTORY) {
         undoStack.shift();
     }
@@ -665,40 +622,22 @@ function pushToUndoStack(pageIndex, annotation) {
 
 function undoAnnotation() {
     if (undoStack.length === 0) return;
-
-    const entry = undoStack.pop();
-    const pageIndex = entry.pageIndex;
-    const annotation = entry.annotation;
-
-    const annotations = storedAnnotations.get(pageIndex);
-    if (annotations) {
-        const idx = annotations.indexOf(annotation);
-        if (idx !== -1) {
-            annotations.splice(idx, 1);
-        } else if (annotations.length > 0) {
-            annotations.pop();
-        }
-        redrawAnnotations(pageIndex);
+    const annotation = undoStack.pop();
+    const idx = storedAnnotations.indexOf(annotation);
+    if (idx !== -1) {
+        storedAnnotations.splice(idx, 1);
     }
-
-    redoStack.push(entry);
+    redrawAllAnnotations();
+    redoStack.push(annotation);
     notifyHistoryState();
 }
 
 function redoAnnotation() {
     if (redoStack.length === 0) return;
-
-    const entry = redoStack.pop();
-    const pageIndex = entry.pageIndex;
-    const annotation = entry.annotation;
-
-    if (!storedAnnotations.has(pageIndex)) {
-        storedAnnotations.set(pageIndex, []);
-    }
-    storedAnnotations.get(pageIndex).push(annotation);
-    redrawAnnotations(pageIndex);
-
-    undoStack.push(entry);
+    const annotation = redoStack.pop();
+    storedAnnotations.push(annotation);
+    redrawAllAnnotations();
+    undoStack.push(annotation);
     notifyHistoryState();
 }
 
