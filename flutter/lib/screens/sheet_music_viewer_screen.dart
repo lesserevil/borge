@@ -45,6 +45,20 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
+    // Re-request focus when it's lost (e.g. WebView steals it during load)
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus && mounted && !_annotationMode) {
+      // WebView or another widget stole focus — take it back
+      // so gamepad/keyboard input keeps working
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted && !_focusNode.hasFocus && !_annotationMode) {
+          _focusNode.requestFocus();
+        }
+      });
+    }
   }
 
   @override
@@ -72,6 +86,7 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
 
   @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
     _focusNode.dispose();
     _annotationRepo.close();
     super.dispose();
@@ -368,6 +383,10 @@ class _SheetMusicViewerScreenState extends State<SheetMusicViewerScreen> {
 
     final fileId = _currentFileId;
     final saved = await _annotationRepo.getByFileId(fileId);
+
+    // Re-request focus so gamepad/keyboard input works immediately after load
+    _focusNode.requestFocus();
+
     if (saved.isEmpty) return;
 
     // Rebuild the ID tracking map
